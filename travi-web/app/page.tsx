@@ -164,7 +164,7 @@ function FloatingPin({ top, bottom, left, right, label, delay }: {
   top?: string; bottom?: string; left?: string; right?: string; label: string; delay: string;
 }) {
   return (
-    <div style={{ position: "absolute", top, bottom, left, right, backgroundColor: "rgba(255,255,255,0.1)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "100px", padding: "6px 14px", fontSize: "13px", color: "#ffffff", fontWeight: "500", whiteSpace: "nowrap", animation: `float 4s ease-in-out ${delay} infinite`, pointerEvents: "none" }}>
+    <div className="floating-pin" style={{ position: "absolute", top, bottom, left, right, backgroundColor: "rgba(255,255,255,0.1)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "100px", padding: "6px 14px", fontSize: "13px", color: "#ffffff", fontWeight: "500", whiteSpace: "nowrap", animation: `float 4s ease-in-out ${delay} infinite`, pointerEvents: "none" }}>
       {label}
     </div>
   );

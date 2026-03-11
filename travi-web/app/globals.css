@@ -90,3 +90,14 @@ input:focus {
 .animate-fade-in {
   animation: fadeIn 0.4s ease forwards;
 }
+
+/* ─── Floating pins — hide on mobile ─── */
+.floating-pin {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .floating-pin {
+    display: none;
+  }
+}
