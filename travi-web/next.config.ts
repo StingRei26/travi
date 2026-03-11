@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Travi web app — Next.js config
+  reactStrictMode: true,
 };
 
 export default nextConfig;
