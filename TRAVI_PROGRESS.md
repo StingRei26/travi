@@ -140,6 +140,8 @@ travi/
 - ✅ TraviCard component — cards with cover, author, tags, stats
 - ✅ Mock data — 6 rich Traviis across Italy, Japan, France, Greece, Thailand, Portugal
 - ✅ Build passing — all 5 routes (/, /explore, /my-traviis, /travi/[id])
+- ✅ GitHub repo live — https://github.com/StingRei26/travi
+- ✅ Deployed to Vercel — https://travi-snowy.vercel.app
 
 ### Up Next
 - [ ] Auth pages (sign up / login)
@@ -147,7 +149,6 @@ travi/
 - [ ] Add stop flow — search location, add review/rating
 - [ ] Map view integration (Mapbox or Leaflet)
 - [ ] Social sharing card generator
-- [ ] Deploy to Vercel
 
 ---
 
