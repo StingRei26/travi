@@ -21,7 +21,7 @@ export default function MyTraviisPage() {
                 <p style={{ color: "#ffffff", fontWeight: "700", fontSize: "16px" }}>Rei Ravelo · @reiravelo</p>
               </div>
             </div>
-            <h1 style={{ fontSize: "clamp(28px, 4vw, 44px)", fontWeight: "800", color: "#ffffff", letterSpacing: "-1px" }}>My Traviis</h1>
+            <h1 style={{ fontSize: "clamp(28px, 4vw, 44px)", fontWeight: "800", color: "#ffffff", letterSpacing: "-1px" }}>My Travis</h1>
             <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "16px", marginTop: "8px" }}>
               {MY_TRAVIIS.length} trips · {MY_TRAVIIS.reduce((acc, t) => acc + t.stops.length, 0)} stops · {new Set(MY_TRAVIIS.map((t) => t.country)).size} countries
             </p>
@@ -50,7 +50,7 @@ export default function MyTraviisPage() {
 
         {/* Quick stats */}
         <div style={{ maxWidth: "1280px", margin: "24px auto 0", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-          <QuickStat icon={<Map size={18} color="#c9a84c" />} value={MY_TRAVIIS.length} label="Traviis" />
+          <QuickStat icon={<Map size={18} color="#c9a84c" />} value={MY_TRAVIIS.length} label="Travis" />
           <QuickStat icon={<BookOpen size={18} color="#c9a84c" />} value={MY_TRAVIIS.reduce((acc, t) => acc + t.stops.length, 0)} label="Stops logged" />
           <QuickStat icon={<Globe size={18} color="#c9a84c" />} value={new Set(MY_TRAVIIS.map((t) => t.country)).size} label="Countries" />
         </div>
@@ -87,7 +87,7 @@ export default function MyTraviisPage() {
           <div>
             <p style={{ color: "#c9a84c", fontWeight: "600", fontSize: "13px", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "6px" }}>Need inspiration?</p>
             <h3 style={{ color: "#ffffff", fontWeight: "800", fontSize: "22px", letterSpacing: "-0.5px" }}>Explore what others are doing</h3>
-            <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "14px", marginTop: "6px" }}>Browse thousands of real Traviis for your next destination</p>
+            <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "14px", marginTop: "6px" }}>Browse thousands of real Travis for your next destination</p>
           </div>
           <Link
             href="/explore"
@@ -102,7 +102,7 @@ export default function MyTraviisPage() {
               whiteSpace: "nowrap",
             }}
           >
-            Explore Traviis →
+            Explore Travis →
           </Link>
         </div>
       </div>
@@ -126,7 +126,7 @@ function EmptyState() {
   return (
     <div style={{ textAlign: "center", padding: "80px 24px" }}>
       <span style={{ fontSize: "64px" }}>🗺️</span>
-      <h3 style={{ color: "#0f1729", fontWeight: "700", fontSize: "20px", marginTop: "16px", marginBottom: "8px" }}>No Traviis yet</h3>
+      <h3 style={{ color: "#0f1729", fontWeight: "700", fontSize: "20px", marginTop: "16px", marginBottom: "8px" }}>No Travis yet</h3>
       <p style={{ color: "#9ca3af", fontSize: "15px", marginBottom: "28px" }}>Start planning your first trip!</p>
       <Link href="/plan" style={{ padding: "13px 28px", borderRadius: "12px", background: "linear-gradient(135deg, #c9a84c, #e8c96a)", color: "#0f1729", fontWeight: "700", fontSize: "15px", textDecoration: "none" }}>
         Create your first Travi

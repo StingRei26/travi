@@ -34,7 +34,7 @@ export default function ExplorePage() {
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
             <Compass size={28} color="#c9a84c" />
             <h1 style={{ fontSize: "clamp(28px, 4vw, 44px)", fontWeight: "800", color: "#ffffff", letterSpacing: "-1px" }}>
-              Explore Traviis
+              Explore Travis
             </h1>
           </div>
           <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "17px", marginBottom: "32px" }}>
@@ -114,7 +114,7 @@ export default function ExplorePage() {
       {/* Results */}
       <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "40px 24px" }}>
         <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "28px" }}>
-          {filtered.length} {filtered.length === 1 ? "Travi" : "Traviis"} found
+          {filtered.length} {filtered.length === 1 ? "Travi" : "Travis"} found
           {activeTag !== "All" ? ` in ${activeTag}` : ""}
           {query ? ` matching "${query}"` : ""}
         </p>
@@ -128,7 +128,7 @@ export default function ExplorePage() {
         ) : (
           <div style={{ textAlign: "center", padding: "80px 24px" }}>
             <span style={{ fontSize: "48px" }}>🗺️</span>
-            <p style={{ color: "#6b7280", fontSize: "18px", marginTop: "16px", fontWeight: "500" }}>No Traviis found</p>
+            <p style={{ color: "#6b7280", fontSize: "18px", marginTop: "16px", fontWeight: "500" }}>No Travis found</p>
             <p style={{ color: "#9ca3af", fontSize: "14px", marginTop: "8px" }}>Try a different search or filter</p>
           </div>
         )}

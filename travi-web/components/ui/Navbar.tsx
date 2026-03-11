@@ -59,7 +59,7 @@ export default function Navbar() {
         {/* Desktop Nav */}
         <div style={{ display: "flex", alignItems: "center", gap: "32px" }} className="hidden-mobile">
           <NavLink href="/explore" icon={<Compass size={16} />} label="Explore" />
-          <NavLink href="/my-traviis" icon={<BookOpen size={16} />} label="My Traviis" />
+          <NavLink href="/my-traviis" icon={<BookOpen size={16} />} label="My Travis" />
           <NavLink href="/plan" icon={<Map size={16} />} label="Plan a Trip" />
         </div>
 
@@ -118,7 +118,7 @@ export default function Navbar() {
           }}
         >
           <MobileNavLink href="/explore" label="Explore" onClick={() => setMenuOpen(false)} />
-          <MobileNavLink href="/my-traviis" label="My Traviis" onClick={() => setMenuOpen(false)} />
+          <MobileNavLink href="/my-traviis" label="My Travis" onClick={() => setMenuOpen(false)} />
           <MobileNavLink href="/plan" label="Plan a Trip" onClick={() => setMenuOpen(false)} />
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px", display: "flex", gap: "12px" }}>
             <Link

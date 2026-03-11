@@ -54,7 +54,7 @@ export default function HomePage() {
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
             <Link href="/explore" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "16px 32px", borderRadius: "12px", background: "linear-gradient(135deg, #c9a84c, #e8c96a)", color: "#0f1729", fontWeight: "700", fontSize: "16px", textDecoration: "none", boxShadow: "0 8px 32px rgba(201,168,76,0.35)" }}>
               <Compass size={18} />
-              Explore Traviis
+              Explore Travis
             </Link>
             <Link href="/my-traviis" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "16px 32px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.2)", color: "#ffffff", fontWeight: "600", fontSize: "16px", textDecoration: "none", backgroundColor: "rgba(255,255,255,0.05)" }}>
               <Map size={18} />
@@ -85,7 +85,7 @@ export default function HomePage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "24px" }}>
             <FeatureCard icon={<Map size={24} color="#c9a84c" />} title="Plan Your Trip" description="Build detailed itineraries with locations, dates, notes, and more. Your entire trip in one beautiful view." />
             <FeatureCard icon={<Star size={24} color="#c9a84c" />} title="Log & Review" description="Check in at locations as you travel. Add reviews, photos, and personal notes while the memory is fresh." />
-            <FeatureCard icon={<Compass size={24} color="#c9a84c" />} title="Discover Traviis" description="Explore public Traviis from travelers worldwide. Planning a trip to Italy? See exactly what others loved." />
+            <FeatureCard icon={<Compass size={24} color="#c9a84c" />} title="Discover Travis" description="Explore public Travis from travelers worldwide. Planning a trip to Italy? See exactly what others loved." />
             <FeatureCard icon={<BookOpen size={24} color="#c9a84c" />} title="Book Reservations" description="Reserve restaurants, hotels, and experiences directly through Travi. No switching between apps." />
             <FeatureCard icon={<Calendar size={24} color="#c9a84c" />} title="Calendar Sync" description="Add your trip stops directly to your calendar. Stay organized without ever leaving the app." />
             <FeatureCard icon={<Share2 size={24} color="#c9a84c" />} title="Share Your Story" description="Generate beautiful share cards for Instagram, X, and more. Your adventure, perfectly framed." />
@@ -99,7 +99,7 @@ export default function HomePage() {
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "48px", flexWrap: "wrap", gap: "16px" }}>
             <div>
               <p style={{ color: "#c9a84c", fontWeight: "600", fontSize: "13px", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px" }}>Trending now</p>
-              <h2 style={{ fontSize: "clamp(24px, 3.5vw, 40px)", fontWeight: "800", color: "#0f1729", letterSpacing: "-0.5px" }}>Popular Traviis</h2>
+              <h2 style={{ fontSize: "clamp(24px, 3.5vw, 40px)", fontWeight: "800", color: "#0f1729", letterSpacing: "-0.5px" }}>Popular Travis</h2>
             </div>
             <Link href="/explore" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#c9a84c", fontWeight: "600", fontSize: "15px", textDecoration: "none" }}>
               View all <ChevronRight size={18} />
