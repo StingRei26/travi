@@ -43,17 +43,9 @@ export default function Navbar() {
           >
             <Map size={18} color="#0f1729" />
           </div>
-          <span
-            style={{
-              fontSize: "22px",
-              fontWeight: "700",
-              color: "#ffffff",
-              letterSpacing: "-0.5px",
-            }}
-          >
-            travi
+          <span style={{ fontSize: "22px", fontWeight: "700", color: "#ffffff", letterSpacing: "0px" }}>
+            travi<span style={{ color: "#c9a84c" }}>.</span>
           </span>
-          <span style={{ color: "#c9a84c", fontSize: "22px", fontWeight: "700" }}>.</span>
         </Link>
 
         {/* Desktop Nav */}
