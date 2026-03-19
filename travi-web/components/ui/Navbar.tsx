@@ -2,147 +2,71 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Map, Menu, X, Compass, BookOpen, User } from "lucide-react";
+import { Map, Menu, X, Compass, BookOpen } from "lucide-react";
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <nav
-      style={{
-        backgroundColor: "#0f1729",
-        borderBottom: "1px solid rgba(201,168,76,0.2)",
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "1280px",
-          margin: "0 auto",
-          padding: "0 24px",
-          height: "64px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
+    <nav style={{
+      backgroundColor: "#ffffff",
+      borderBottom: "1px solid #E2E8F0",
+      position: "sticky", top: 0, zIndex: 50,
+      boxShadow: "0 2px 16px rgba(0,0,0,0.06)",
+    }}>
+      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 24px", height: "68px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+
         {/* Logo */}
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none" }}>
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Map size={18} color="#0f1729" />
+        <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
+          <div style={{
+            width: "36px", height: "36px", borderRadius: "10px",
+            background: "linear-gradient(135deg, #FF6B35, #FFB347, #9B5DE5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(155,93,229,0.35)",
+          }}>
+            <Map size={20} color="#ffffff" />
           </div>
-          <span style={{ fontSize: "22px", fontWeight: "700", color: "#ffffff", letterSpacing: "0px" }}>
-            travi<span style={{ color: "#c9a84c" }}>.</span>
+          <span style={{ fontSize: "24px", fontWeight: "800", letterSpacing: "-0.5px", color: "#0F172A" }}>
+            travi<span style={{ background: "linear-gradient(135deg, #FF6B35, #9B5DE5)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>.</span>
           </span>
         </Link>
 
         {/* Desktop Nav */}
-        <div style={{ display: "flex", alignItems: "center", gap: "32px" }} className="hidden-mobile">
-          <NavLink href="/explore" icon={<Compass size={16} />} label="Explore" />
-          <NavLink href="/my-traviis" icon={<BookOpen size={16} />} label="My Travis" />
-          <NavLink href="/plan" icon={<Map size={16} />} label="Plan a Trip" />
+        <div style={{ display: "flex", alignItems: "center", gap: "36px" }} className="hidden-mobile">
+          <NavLink href="/explore" icon={<Compass size={15} />} label="Explore" />
+          <NavLink href="/my-traviis" icon={<BookOpen size={15} />} label="My Travis" />
+          <NavLink href="/plan" icon={<Map size={15} />} label="Plan a Trip" />
         </div>
 
-        {/* CTA + Avatar */}
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }} className="hidden-mobile">
-          <Link
-            href="/explore"
-            style={{
-              padding: "8px 20px",
-              borderRadius: "8px",
-              border: "1px solid rgba(201,168,76,0.4)",
-              color: "#c9a84c",
-              fontSize: "14px",
-              fontWeight: "500",
-              textDecoration: "none",
-            }}
-          >
+        {/* CTAs */}
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }} className="hidden-mobile">
+          <Link href="/explore" style={{ padding: "9px 20px", borderRadius: "100px", border: "1.5px solid #E2E8F0", color: "#0F172A", fontSize: "14px", fontWeight: "600", textDecoration: "none" }}>
             Sign In
           </Link>
-          <Link
-            href="/explore"
-            style={{
-              padding: "8px 20px",
-              borderRadius: "8px",
-              background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
-              color: "#0f1729",
-              fontSize: "14px",
-              fontWeight: "600",
-              textDecoration: "none",
-            }}
-          >
+          <Link href="/explore" style={{ padding: "9px 22px", borderRadius: "100px", background: "linear-gradient(135deg, #FF6B35, #9B5DE5)", color: "#ffffff", fontSize: "14px", fontWeight: "700", textDecoration: "none", boxShadow: "0 4px 16px rgba(155,93,229,0.35)" }}>
             Get Started
           </Link>
         </div>
 
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          style={{ background: "none", border: "none", color: "#ffffff", cursor: "pointer", padding: "4px" }}
-          className="show-mobile"
-        >
+        {/* Mobile toggle */}
+        <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: "none", border: "none", color: "#0F172A", padding: "4px" }} className="show-mobile">
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
 
-      {/* Mobile Menu */}
+      {/* Mobile menu */}
       {menuOpen && (
-        <div
-          style={{
-            backgroundColor: "#0f1729",
-            borderTop: "1px solid rgba(201,168,76,0.2)",
-            padding: "16px 24px 24px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "16px",
-          }}
-        >
-          <MobileNavLink href="/explore" label="Explore" onClick={() => setMenuOpen(false)} />
-          <MobileNavLink href="/my-traviis" label="My Travis" onClick={() => setMenuOpen(false)} />
-          <MobileNavLink href="/plan" label="Plan a Trip" onClick={() => setMenuOpen(false)} />
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px", display: "flex", gap: "12px" }}>
-            <Link
-              href="/explore"
-              style={{
-                flex: 1,
-                padding: "10px",
-                borderRadius: "8px",
-                border: "1px solid rgba(201,168,76,0.4)",
-                color: "#c9a84c",
-                fontSize: "14px",
-                fontWeight: "500",
-                textDecoration: "none",
-                textAlign: "center",
-              }}
-            >
+        <div style={{ backgroundColor: "#ffffff", borderTop: "1px solid #E2E8F0", padding: "20px 24px 28px", display: "flex", flexDirection: "column", gap: "20px" }}>
+          {[{ href: "/explore", label: "Explore" }, { href: "/my-traviis", label: "My Travis" }, { href: "/plan", label: "Plan a Trip" }].map(item => (
+            <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)} style={{ color: "#0F172A", fontWeight: "600", fontSize: "16px", textDecoration: "none" }}>
+              {item.label}
+            </Link>
+          ))}
+          <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "20px", display: "flex", gap: "12px" }}>
+            <Link href="/explore" style={{ flex: 1, padding: "11px", borderRadius: "100px", border: "1.5px solid #E2E8F0", color: "#0F172A", fontSize: "14px", fontWeight: "600", textDecoration: "none", textAlign: "center" }}>
               Sign In
             </Link>
-            <Link
-              href="/explore"
-              style={{
-                flex: 1,
-                padding: "10px",
-                borderRadius: "8px",
-                background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
-                color: "#0f1729",
-                fontSize: "14px",
-                fontWeight: "600",
-                textDecoration: "none",
-                textAlign: "center",
-              }}
-            >
+            <Link href="/explore" style={{ flex: 1, padding: "11px", borderRadius: "100px", background: "linear-gradient(135deg, #FF6B35, #9B5DE5)", color: "#ffffff", fontSize: "14px", fontWeight: "700", textDecoration: "none", textAlign: "center" }}>
               Get Started
             </Link>
           </div>
@@ -151,10 +75,10 @@ export default function Navbar() {
 
       <style>{`
         .hidden-mobile { display: flex !important; }
-        .show-mobile { display: none !important; }
+        .show-mobile   { display: none !important; }
         @media (max-width: 768px) {
           .hidden-mobile { display: none !important; }
-          .show-mobile { display: block !important; }
+          .show-mobile   { display: block !important; }
         }
       `}</style>
     </nav>
@@ -163,44 +87,11 @@ export default function Navbar() {
 
 function NavLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
   return (
-    <Link
-      href={href}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        color: "rgba(255,255,255,0.7)",
-        textDecoration: "none",
-        fontSize: "14px",
-        fontWeight: "500",
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.color = "#c9a84c";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.7)";
-      }}
-    >
-      {icon}
-      {label}
-    </Link>
-  );
-}
-
-function MobileNavLink({ href, label, onClick }: { href: string; label: string; onClick: () => void }) {
-  return (
-    <Link
-      href={href}
-      onClick={onClick}
-      style={{
-        color: "rgba(255,255,255,0.8)",
-        textDecoration: "none",
-        fontSize: "16px",
-        fontWeight: "500",
-        padding: "8px 0",
-      }}
-    >
-      {label}
+    <Link href={href}
+      style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748B", textDecoration: "none", fontSize: "14px", fontWeight: "600" }}
+      onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = "#9B5DE5"}
+      onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = "#64748B"}>
+      {icon}{label}
     </Link>
   );
 }
