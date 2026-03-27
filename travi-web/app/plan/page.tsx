@@ -18,8 +18,18 @@ type Stop = {
   rating: number;
   review: string;
   emoji: string;
+  imageFile?: File;
+  imagePreview?: string;
 };
-type NewStop = { name: string; location: string; rating: number; review: string; emoji: string };
+type NewStop = {
+  name: string;
+  location: string;
+  rating: number;
+  review: string;
+  emoji: string;
+  imageFile?: File;
+  imagePreview?: string;
+};
 
 // ─── Data ──────────────────────────────────────────────────────────
 
@@ -667,6 +677,107 @@ function FlyingStep({ city }: { city: City }) {
   );
 }
 
+// ─── Cover Image Picker ─────────────────────────────────────────────
+
+function CoverImagePicker({
+  preview,
+  onChange,
+}: {
+  preview: string | null;
+  onChange: (file: File, preview: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div style={{ marginBottom: "28px" }}>
+      <p
+        style={{
+          color: "rgba(255,255,255,0.4)",
+          fontSize: "11px",
+          fontWeight: "700",
+          letterSpacing: "1.8px",
+          textTransform: "uppercase",
+          marginBottom: "10px",
+        }}
+      >
+        Cover Photo
+      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const url = URL.createObjectURL(file);
+          onChange(file, url);
+        }}
+      />
+      {preview ? (
+        <div style={{ position: "relative", borderRadius: "16px", overflow: "hidden", height: "180px" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <button
+            onClick={() => inputRef.current?.click()}
+            style={{
+              position: "absolute",
+              bottom: "12px",
+              right: "12px",
+              padding: "8px 14px",
+              borderRadius: "8px",
+              background: "rgba(0,0,0,0.6)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "#ffffff",
+              fontSize: "13px",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Change Photo
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => inputRef.current?.click()}
+          style={{
+            width: "100%",
+            height: "140px",
+            borderRadius: "16px",
+            border: "1.5px dashed rgba(255,255,255,0.15)",
+            backgroundColor: "rgba(255,255,255,0.03)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "10px",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "rgba(201,168,76,0.4)";
+            e.currentTarget.style.backgroundColor = "rgba(201,168,76,0.04)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
+            e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)";
+          }}
+        >
+          <span style={{ fontSize: "32px" }}>📸</span>
+          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "14px", fontWeight: "500" }}>
+            Add a cover photo
+          </p>
+          <p style={{ color: "rgba(255,255,255,0.2)", fontSize: "12px" }}>
+            Optional — adds a personal touch
+          </p>
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Step 3 — Builder ──────────────────────────────────────────────
 
 function BuilderStep({
@@ -683,6 +794,8 @@ function BuilderStep({
   onPublish,
   publishing,
   publishError,
+  coverPreview,
+  onCoverImageChange,
 }: {
   city: City;
   stops: Stop[];
@@ -697,6 +810,8 @@ function BuilderStep({
   onPublish: () => void;
   publishing: boolean;
   publishError: string | null;
+  coverPreview: string | null;
+  onCoverImageChange: (file: File, preview: string) => void;
 }) {
   return (
     <div
@@ -806,6 +921,9 @@ function BuilderStep({
           {publishError}
         </div>
       )}
+
+      {/* ── Cover image ── */}
+      <CoverImagePicker preview={coverPreview} onChange={onCoverImageChange} />
 
       {/* ── Trip title ── */}
       <div style={{ marginBottom: "32px" }}>
@@ -1246,6 +1364,8 @@ export default function PlanPage() {
   });
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [coverImage, setCoverImage] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
 
   const filtered =
     query.length > 0
@@ -1280,10 +1400,12 @@ export default function PlanPage() {
       rating: newStop.rating,
       review: newStop.review.trim(),
       emoji: cfg.emoji,
+      imageFile: newStop.imageFile,
+      imagePreview: newStop.imagePreview,
     };
     setStops((prev) => [...prev, stop]);
     setAddingType(null);
-    setNewStop({ name: "", location: "", rating: 5, review: "", emoji: "" });
+    setNewStop({ name: "", location: "", rating: 5, review: "", emoji: "", imageFile: undefined, imagePreview: undefined });
   };
 
   const handlePublish = async () => {
@@ -1299,9 +1421,19 @@ export default function PlanPage() {
       return;
     }
 
-    // Pick a gradient deterministically from city name
+    // ── Helper: upload a file to Supabase Storage ──
+    const uploadImage = async (file: File, path: string): Promise<string | null> => {
+      const { error } = await supabase.storage
+        .from("travi-images")
+        .upload(path, file, { upsert: true });
+      if (error) return null;
+      const { data } = supabase.storage.from("travi-images").getPublicUrl(path);
+      return data.publicUrl;
+    };
+
     const gradIdx = selectedCity.name.charCodeAt(0) % COVER_GRADIENTS.length;
 
+    // ── 1. Insert travi row ──
     const { data: travi, error: traviErr } = await supabase
       .from("traviis")
       .insert({
@@ -1323,28 +1455,56 @@ export default function PlanPage() {
       return;
     }
 
-    const stopsPayload = stops.map((s, i) => ({
-      travi_id: travi.id,
-      user_id: user.id,
-      name: s.name,
-      location: s.location,
-      rating: s.rating,
-      review: s.review,
-      type: STOP_TYPE_MAP[s.type],
-      emoji: s.emoji,
-      order_index: i,
-    }));
+    // ── 2. Upload cover image (if provided) ──
+    let coverImageUrl: string | null = null;
+    if (coverImage) {
+      const ext = coverImage.name.split(".").pop() ?? "jpg";
+      coverImageUrl = await uploadImage(
+        coverImage,
+        `${user.id}/${travi.id}/cover.${ext}`
+      );
+      if (coverImageUrl) {
+        await supabase
+          .from("traviis")
+          .update({ cover_image_url: coverImageUrl })
+          .eq("id", travi.id);
+      }
+    }
+
+    // ── 3. Upload stop images + insert stops ──
+    const stopsPayload = await Promise.all(
+      stops.map(async (s, i) => {
+        let imageUrl: string | null = null;
+        if (s.imageFile) {
+          const ext = s.imageFile.name.split(".").pop() ?? "jpg";
+          imageUrl = await uploadImage(
+            s.imageFile,
+            `${user.id}/${travi.id}/stops/${i}.${ext}`
+          );
+        }
+        return {
+          travi_id: travi.id,
+          user_id: user.id,
+          name: s.name,
+          location: s.location,
+          rating: s.rating,
+          review: s.review,
+          type: STOP_TYPE_MAP[s.type],
+          emoji: s.emoji,
+          order_index: i,
+          image_url: imageUrl,
+        };
+      })
+    );
 
     const { error: stopsErr } = await supabase.from("stops").insert(stopsPayload);
 
     if (stopsErr) {
-      setPublishError("Travi saved but some stops failed. Check My Travis.");
+      setPublishError("Travi saved but stops failed. Check My Travis.");
+      setPublishing(false);
     } else {
       router.push("/my-traviis");
-      return;
     }
-
-    setPublishing(false);
   };
 
   return (
@@ -1384,6 +1544,8 @@ export default function PlanPage() {
           onPublish={handlePublish}
           publishing={publishing}
           publishError={publishError}
+          coverPreview={coverPreview}
+          onCoverImageChange={(file, preview) => { setCoverImage(file); setCoverPreview(preview); }}
         />
       )}
     </main>

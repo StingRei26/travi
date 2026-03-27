@@ -39,6 +39,7 @@ create table if not exists public.traviis (
   end_date        text,
   is_public       boolean default true,
   tags            text[],
+  cover_image_url text,
   created_at      timestamptz default now()
 );
 
@@ -70,6 +71,7 @@ create table if not exists public.stops (
   review      text,
   type        text check (type in ('hotel', 'restaurant', 'attraction', 'experience')),
   emoji       text,
+  image_url   text,
   order_index integer default 0,
   created_at  timestamptz default now()
 );
@@ -94,7 +96,12 @@ create policy "Users can update own stops"
 create policy "Users can delete own stops"
   on public.stops for delete using (auth.uid() = user_id);
 
--- ── 4. Auto-create profile on signup ──────────────
+-- ── 4. Alter existing tables (run if tables already exist) ────────
+
+alter table public.traviis add column if not exists cover_image_url text;
+alter table public.stops    add column if not exists image_url       text;
+
+
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -132,6 +139,30 @@ begin
   return new;
 end;
 $$;
+
+-- ── 5. Storage bucket for images ──────────────────
+
+insert into storage.buckets (id, name, public)
+values ('travi-images', 'travi-images', true)
+on conflict (id) do nothing;
+
+create policy "Anyone can read travi images"
+  on storage.objects for select
+  using (bucket_id = 'travi-images');
+
+create policy "Authenticated users can upload travi images"
+  on storage.objects for insert
+  with check (bucket_id = 'travi-images' and auth.role() = 'authenticated');
+
+create policy "Users can update own travi images"
+  on storage.objects for update
+  using (bucket_id = 'travi-images' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Users can delete own travi images"
+  on storage.objects for delete
+  using (bucket_id = 'travi-images' and auth.uid()::text = (storage.foldername(name))[1]);
+
+-- ── 6. Auto-create profile on signup ──────────────
 
 create or replace trigger on_auth_user_created
   after insert on auth.users
