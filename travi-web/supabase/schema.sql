@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════
---  Travi — Supabase schema
+--  Travi — Supabase schema (idempotent — safe to re-run)
 --  Paste this into your Supabase SQL Editor and run.
 -- ═══════════════════════════════════════════════════
 
@@ -14,6 +14,10 @@ create table if not exists public.profiles (
 );
 
 alter table public.profiles enable row level security;
+
+drop policy if exists "Profiles are publicly readable" on public.profiles;
+drop policy if exists "Users can insert own profile"   on public.profiles;
+drop policy if exists "Users can update own profile"   on public.profiles;
 
 create policy "Profiles are publicly readable"
   on public.profiles for select using (true);
@@ -35,15 +39,23 @@ create table if not exists public.traviis (
   country_flag    text,
   emoji           text,
   cover_gradient  text,
+  cover_image_url text,
   start_date      text,
   end_date        text,
   is_public       boolean default true,
   tags            text[],
-  cover_image_url text,
   created_at      timestamptz default now()
 );
 
+-- Add column if table already existed without it
+alter table public.traviis add column if not exists cover_image_url text;
+
 alter table public.traviis enable row level security;
+
+drop policy if exists "Public traviis viewable by everyone" on public.traviis;
+drop policy if exists "Users can insert own traviis"        on public.traviis;
+drop policy if exists "Users can update own traviis"        on public.traviis;
+drop policy if exists "Users can delete own traviis"        on public.traviis;
 
 create policy "Public traviis viewable by everyone"
   on public.traviis for select
@@ -76,7 +88,15 @@ create table if not exists public.stops (
   created_at  timestamptz default now()
 );
 
+-- Add column if table already existed without it
+alter table public.stops add column if not exists image_url text;
+
 alter table public.stops enable row level security;
+
+drop policy if exists "Stops viewable if parent travi is viewable" on public.stops;
+drop policy if exists "Users can insert own stops"                 on public.stops;
+drop policy if exists "Users can update own stops"                 on public.stops;
+drop policy if exists "Users can delete own stops"                 on public.stops;
 
 create policy "Stops viewable if parent travi is viewable"
   on public.stops for select using (
@@ -96,12 +116,34 @@ create policy "Users can update own stops"
 create policy "Users can delete own stops"
   on public.stops for delete using (auth.uid() = user_id);
 
--- ── 4. Alter existing tables (run if tables already exist) ────────
+-- ── 4. Storage bucket for images ──────────────────
 
-alter table public.traviis add column if not exists cover_image_url text;
-alter table public.stops    add column if not exists image_url       text;
+insert into storage.buckets (id, name, public)
+values ('travi-images', 'travi-images', true)
+on conflict (id) do nothing;
 
+drop policy if exists "Anyone can read travi images"                on storage.objects;
+drop policy if exists "Authenticated users can upload travi images" on storage.objects;
+drop policy if exists "Users can update own travi images"           on storage.objects;
+drop policy if exists "Users can delete own travi images"           on storage.objects;
 
+create policy "Anyone can read travi images"
+  on storage.objects for select
+  using (bucket_id = 'travi-images');
+
+create policy "Authenticated users can upload travi images"
+  on storage.objects for insert
+  with check (bucket_id = 'travi-images' and auth.role() = 'authenticated');
+
+create policy "Users can update own travi images"
+  on storage.objects for update
+  using (bucket_id = 'travi-images' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Users can delete own travi images"
+  on storage.objects for delete
+  using (bucket_id = 'travi-images' and auth.uid()::text = (storage.foldername(name))[1]);
+
+-- ── 5. Auto-create profile on signup ──────────────
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -139,30 +181,6 @@ begin
   return new;
 end;
 $$;
-
--- ── 5. Storage bucket for images ──────────────────
-
-insert into storage.buckets (id, name, public)
-values ('travi-images', 'travi-images', true)
-on conflict (id) do nothing;
-
-create policy "Anyone can read travi images"
-  on storage.objects for select
-  using (bucket_id = 'travi-images');
-
-create policy "Authenticated users can upload travi images"
-  on storage.objects for insert
-  with check (bucket_id = 'travi-images' and auth.role() = 'authenticated');
-
-create policy "Users can update own travi images"
-  on storage.objects for update
-  using (bucket_id = 'travi-images' and auth.uid()::text = (storage.foldername(name))[1]);
-
-create policy "Users can delete own travi images"
-  on storage.objects for delete
-  using (bucket_id = 'travi-images' and auth.uid()::text = (storage.foldername(name))[1]);
-
--- ── 6. Auto-create profile on signup ──────────────
 
 create or replace trigger on_auth_user_created
   after insert on auth.users
