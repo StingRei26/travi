@@ -14,6 +14,7 @@ export type Travi = {
   title: string;
   description: string;
   coverGradient: string;
+  coverImageUrl?: string;
   emoji: string;
   country: string;
   countryFlag: string;
