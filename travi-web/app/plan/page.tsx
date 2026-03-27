@@ -150,51 +150,67 @@ function GlobeCanvas({
       mountRef.current.appendChild(ren.domElement);
       renderer = ren;
 
-      // Lighting — mimic sunlight from upper-right
-      scene.add(new THREE.AmbientLight(0x1a2035, 3));
-      const sun = new THREE.DirectionalLight(0xfff4e0, 2.4);
-      sun.position.set(5, 2, 4);
+      // Lighting — sunlight from upper-right
+      scene.add(new THREE.AmbientLight(0x112244, 2.2));
+      const sun = new THREE.DirectionalLight(0xfff4e0, 3.0);
+      sun.position.set(5, 3, 4);
       scene.add(sun);
-      // Soft fill light from the back
-      const fill = new THREE.DirectionalLight(0x3355aa, 0.4);
+      const fill = new THREE.DirectionalLight(0x2244aa, 0.5);
       fill.position.set(-4, -1, -3);
       scene.add(fill);
 
       // Earth sphere
-      const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+      const earthGeo = new THREE.SphereGeometry(1, 72, 72);
       const earthMat = new THREE.MeshPhongMaterial({
-        specular: new THREE.Color(0x1a3a6e),
-        shininess: 28,
+        specular: new THREE.Color(0x224488),
+        shininess: 60,
       });
       const earth = new THREE.Mesh(earthGeo, earthMat);
       scene.add(earth);
 
-      // Load satellite texture
       const loader = new THREE.TextureLoader();
+
+      // Satellite colour texture
       loader.load("/earth.jpg", (tex) => {
+        tex.colorSpace = (THREE as any).SRGBColorSpace ?? "srgb";
         earthMat.map = tex;
         earthMat.needsUpdate = true;
       });
 
-      // Atmosphere shell — thin blue haze
-      const atmosGeo = new THREE.SphereGeometry(1.04, 32, 32);
-      const atmosMat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(0x2277ff),
-        transparent: true,
-        opacity: 0.07,
-        side: THREE.BackSide,
+      // Specular map — makes oceans shiny, land dull
+      loader.load("/earth-specular.jpg", (tex) => {
+        earthMat.specularMap = tex;
+        earthMat.needsUpdate = true;
       });
-      scene.add(new THREE.Mesh(atmosGeo, atmosMat));
 
-      // Outer glow ring
-      const glowGeo = new THREE.SphereGeometry(1.14, 32, 32);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0x1144cc),
-        transparent: true,
-        opacity: 0.04,
-        side: THREE.BackSide,
+      // Normal map — gives terrain 3-D depth
+      loader.load("/earth-normal.jpg", (tex) => {
+        earthMat.normalMap = tex;
+        earthMat.normalScale = new THREE.Vector2(0.6, 0.6);
+        earthMat.needsUpdate = true;
       });
-      scene.add(new THREE.Mesh(glowGeo, glowMat));
+
+      // Inner atmosphere — visible rim glow from behind
+      const atmos1Geo = new THREE.SphereGeometry(1.025, 48, 48);
+      const atmos1Mat = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(0x3388ff),
+        transparent: true,
+        opacity: 0.18,
+        side: THREE.BackSide,
+        depthWrite: false,
+      });
+      scene.add(new THREE.Mesh(atmos1Geo, atmos1Mat));
+
+      // Outer soft halo
+      const atmos2Geo = new THREE.SphereGeometry(1.12, 48, 48);
+      const atmos2Mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0x1155cc),
+        transparent: true,
+        opacity: 0.055,
+        side: THREE.BackSide,
+        depthWrite: false,
+      });
+      scene.add(new THREE.Mesh(atmos2Geo, atmos2Mat));
 
       const animate = () => {
         if (!mounted) return;
@@ -226,7 +242,7 @@ function GlobeCanvas({
         borderRadius: "50%",
         overflow: "hidden",
         filter:
-          "drop-shadow(0 0 48px rgba(50,130,255,0.45)) drop-shadow(0 0 100px rgba(30,80,200,0.25))",
+          "drop-shadow(0 0 40px rgba(50,140,255,0.55)) drop-shadow(0 0 90px rgba(30,90,220,0.30))",
       }}
     />
   );
@@ -415,7 +431,7 @@ function GlobeStep({
             )}
             {searchResults.map((city) => (
               <button
-                key={city.name + city.country}
+                key={`${city.lat},${city.lon}`}
                 onClick={() => onSelectCity(city)}
                 style={{
                   width: "100%",
@@ -1137,6 +1153,18 @@ function BuilderStep({
 
             {/* Stop photo */}
             <div>
+              <p
+                style={{
+                  color: "rgba(255,255,255,0.4)",
+                  fontSize: "11px",
+                  fontWeight: "600",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                  marginBottom: "8px",
+                }}
+              >
+                Stop Photo
+              </p>
               <input
                 ref={stopImgRef}
                 type="file"
