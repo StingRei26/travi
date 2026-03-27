@@ -28,6 +28,7 @@ function dbToTravi(row: any, profile: { name: string; handle: string }, idx: num
     title: row.title ?? "Untitled Travi",
     description: row.description ?? "",
     coverGradient: row.cover_gradient ?? GRADIENTS[idx % GRADIENTS.length],
+    coverImageUrl: row.cover_image_url ?? undefined,
     emoji: row.emoji ?? "🌍",
     country: row.country ?? "Unknown",
     countryFlag: row.country_flag ?? "🌍",
@@ -64,6 +65,13 @@ export default function MyTraviisPage() {
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState("Traveler");
   const [profileHandle, setProfileHandle] = useState("@you");
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this Travi? This can't be undone.")) return;
+    const supabase = createClient();
+    await supabase.from("traviis").delete().eq("id", id);
+    setTraviis((prev) => prev.filter((t) => t.id !== id));
+  };
 
   useEffect(() => {
     const supabase = createClient();
@@ -397,7 +405,44 @@ export default function MyTraviisPage() {
             }}
           >
             {traviis.map((travi) => (
-              <TraviCard key={travi.id} travi={travi} />
+              <div key={travi.id}>
+                <TraviCard travi={travi} />
+                <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                  <Link
+                    href={`/travi/${travi.id}/edit`}
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      padding: "9px 0",
+                      borderRadius: "10px",
+                      border: "1px solid #e7e5e0",
+                      backgroundColor: "#ffffff",
+                      color: "#0f1729",
+                      fontWeight: "600",
+                      fontSize: "13px",
+                      textDecoration: "none",
+                    }}
+                  >
+                    ✏️ Edit
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(travi.id)}
+                    style={{
+                      padding: "9px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid rgba(239,68,68,0.25)",
+                      backgroundColor: "rgba(239,68,68,0.04)",
+                      color: "#dc2626",
+                      fontWeight: "600",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         ) : (

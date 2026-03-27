@@ -13,7 +13,7 @@ interface DisplayStop {
   location: string;
   date: string;
   review: string;
-  imageUrl?: string | null;
+  imageUrls: string[];
 }
 
 interface DisplayTravi {
@@ -70,7 +70,8 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
         .sort((a: { order_index: number }, b: { order_index: number }) => a.order_index - b.order_index)
         .map((s: {
           id: string; emoji: string; type: string; rating: number;
-          name: string; location: string; created_at: string; review: string; image_url?: string | null;
+          name: string; location: string; created_at: string; review: string;
+          image_url?: string | null; image_urls?: string[] | null;
         }) => ({
           id: s.id,
           emoji: s.emoji ?? "📍",
@@ -80,7 +81,9 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
           location: s.location ?? "",
           date: s.created_at ? new Date(s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "",
           review: s.review ?? "",
-          imageUrl: s.image_url,
+          imageUrls: Array.isArray(s.image_urls) && s.image_urls.length > 0
+            ? s.image_urls
+            : s.image_url ? [s.image_url] : [],
         }));
 
       travi = {
@@ -120,10 +123,11 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
       stats: mock.stats,
       startDate: mock.startDate,
       endDate: mock.endDate,
-      stops: mock.stops,
+      stops: mock.stops.map((s) => ({ ...s, imageUrls: [] })),
       tags: mock.tags,
     };
   }
+  if (!travi) notFound();
 
   const heroStyle = travi.coverImageUrl
     ? {
@@ -228,13 +232,15 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
 
                       {/* Card */}
                       <div style={{ flex: 1, backgroundColor: "#ffffff", borderRadius: "16px", border: "1px solid #e7e5e0", overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
-                        {stop.imageUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={stop.imageUrl}
-                            alt={stop.name}
-                            style={{ width: "100%", height: "180px", objectFit: "cover", display: "block" }}
-                          />
+                        {stop.imageUrls.length > 0 && (
+                          <div style={{ display: "flex", height: "180px", overflow: "hidden" }}>
+                            {stop.imageUrls.slice(0, 3).map((url, imgIdx) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img key={imgIdx} src={url} alt={stop.name}
+                                style={{ flex: 1, minWidth: 0, objectFit: "cover", display: "block", borderRight: imgIdx < stop.imageUrls.length - 1 ? "2px solid #f8f7f4" : "none" }}
+                              />
+                            ))}
+                          </div>
                         )}
                         <div style={{ padding: "20px 24px" }}>
                           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "8px", gap: "12px" }}>

@@ -18,8 +18,8 @@ type Stop = {
   rating: number;
   review: string;
   emoji: string;
-  imageFile?: File;
-  imagePreview?: string;
+  imageFiles: File[];
+  imagePreviews: string[];
 };
 type NewStop = {
   name: string;
@@ -27,8 +27,8 @@ type NewStop = {
   rating: number;
   review: string;
   emoji: string;
-  imageFile?: File;
-  imagePreview?: string;
+  imageFiles: File[];
+  imagePreviews: string[];
 };
 
 type NominatimResult = {
@@ -1151,7 +1151,7 @@ function BuilderStep({
               onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
             />
 
-            {/* Stop photo */}
+            {/* Stop photos — up to 3 */}
             <div>
               <p
                 style={{
@@ -1163,7 +1163,10 @@ function BuilderStep({
                   marginBottom: "8px",
                 }}
               >
-                Stop Photo
+                Stop Photos{" "}
+                <span style={{ color: "rgba(255,255,255,0.2)", fontWeight: "400", textTransform: "none", letterSpacing: 0 }}>
+                  ({newStop.imagePreviews.length}/3)
+                </span>
               </p>
               <input
                 ref={stopImgRef}
@@ -1172,45 +1175,58 @@ function BuilderStep({
                 style={{ display: "none" }}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (!file) return;
-                  onNewStopChange({ imageFile: file, imagePreview: URL.createObjectURL(file) });
+                  if (!file || newStop.imagePreviews.length >= 3) return;
+                  onNewStopChange({
+                    imageFiles: [...newStop.imageFiles, file],
+                    imagePreviews: [...newStop.imagePreviews, URL.createObjectURL(file)],
+                  });
+                  if (stopImgRef.current) stopImgRef.current.value = "";
                 }}
               />
-              {newStop.imagePreview ? (
-                <div style={{ position: "relative", borderRadius: "12px", overflow: "hidden", height: "130px" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={newStop.imagePreview} alt="Stop" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  <button
-                    onClick={() => {
-                      onNewStopChange({ imageFile: undefined, imagePreview: undefined });
-                      if (stopImgRef.current) stopImgRef.current.value = "";
-                    }}
-                    style={{
-                      position: "absolute", top: "8px", right: "8px",
-                      background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "6px",
-                      color: "#fff", fontSize: "12px", fontWeight: "600", cursor: "pointer",
-                      padding: "4px 8px", fontFamily: "inherit",
-                    }}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {newStop.imagePreviews.map((preview, idx) => (
+                  <div
+                    key={idx}
+                    style={{ position: "relative", width: "88px", height: "88px", borderRadius: "10px", overflow: "hidden", flexShrink: 0 }}
                   >
-                    Remove
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <button
+                      onClick={() => {
+                        onNewStopChange({
+                          imageFiles: newStop.imageFiles.filter((_, i) => i !== idx),
+                          imagePreviews: newStop.imagePreviews.filter((_, i) => i !== idx),
+                        });
+                      }}
+                      style={{
+                        position: "absolute", top: "4px", right: "4px",
+                        width: "22px", height: "22px", borderRadius: "50%",
+                        background: "rgba(0,0,0,0.7)", border: "none",
+                        color: "#fff", fontSize: "14px", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {newStop.imagePreviews.length < 3 && (
+                  <button
+                    onClick={() => stopImgRef.current?.click()}
+                    style={{
+                      width: "88px", height: "88px", borderRadius: "10px",
+                      border: "1.5px dashed rgba(255,255,255,0.15)", background: "none",
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      justifyContent: "center", gap: "5px", cursor: "pointer", flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.4)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)")}
+                  >
+                    <span style={{ fontSize: "22px" }}>📸</span>
+                    <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px" }}>Add</span>
                   </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => stopImgRef.current?.click()}
-                  style={{
-                    width: "100%", padding: "11px 16px", borderRadius: "10px",
-                    border: "1.5px dashed rgba(255,255,255,0.13)", background: "none",
-                    display: "flex", alignItems: "center", gap: "8px",
-                    color: "rgba(255,255,255,0.38)", fontSize: "13px", fontWeight: "500",
-                    cursor: "pointer", fontFamily: "inherit",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.4)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.13)")}
-                >
-                  📸 Add a photo to this stop
-                </button>
-              )}
+                )}
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
@@ -1323,13 +1339,24 @@ function BuilderStep({
                         position: "relative",
                       }}
                     >
-                      {stop.imagePreview && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={stop.imagePreview}
-                          alt={stop.name}
-                          style={{ width: "100%", height: "120px", objectFit: "cover", display: "block" }}
-                        />
+                      {stop.imagePreviews.length > 0 && (
+                        <div style={{ display: "flex", height: "110px", overflow: "hidden" }}>
+                          {stop.imagePreviews.map((preview, imgIdx) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={imgIdx}
+                              src={preview}
+                              alt={stop.name}
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                objectFit: "cover",
+                                display: "block",
+                                borderRight: imgIdx < stop.imagePreviews.length - 1 ? "2px solid rgba(15,23,41,0.8)" : "none",
+                              }}
+                            />
+                          ))}
+                        </div>
                       )}
                       <div style={{ padding: "16px 20px" }}>
                       <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginBottom: "6px" }}>
@@ -1480,7 +1507,7 @@ export default function PlanPage() {
   const [tripTitle, setTripTitle] = useState("");
   const [addingType, setAddingType] = useState<StopType | null>(null);
   const [newStop, setNewStop] = useState<NewStop>({
-    name: "", location: "", rating: 5, review: "", emoji: "",
+    name: "", location: "", rating: 5, review: "", emoji: "", imageFiles: [], imagePreviews: [],
   });
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -1535,12 +1562,12 @@ export default function PlanPage() {
       rating: newStop.rating,
       review: newStop.review.trim(),
       emoji: cfg.emoji,
-      imageFile: newStop.imageFile,
-      imagePreview: newStop.imagePreview,
+      imageFiles: [...newStop.imageFiles],
+      imagePreviews: [...newStop.imagePreviews],
     };
     setStops((prev) => [...prev, stop]);
     setAddingType(null);
-    setNewStop({ name: "", location: "", rating: 5, review: "", emoji: "", imageFile: undefined, imagePreview: undefined });
+    setNewStop({ name: "", location: "", rating: 5, review: "", emoji: "", imageFiles: [], imagePreviews: [] });
   };
 
   const handlePublish = async () => {
@@ -1609,13 +1636,15 @@ export default function PlanPage() {
     // ── 3. Upload stop images + insert stops ──
     const stopsPayload = await Promise.all(
       stops.map(async (s, i) => {
-        let imageUrl: string | null = null;
-        if (s.imageFile) {
-          const ext = s.imageFile.name.split(".").pop() ?? "jpg";
-          imageUrl = await uploadImage(
-            s.imageFile,
-            `${user.id}/${travi.id}/stops/${i}.${ext}`
+        const imageUrls: string[] = [];
+        for (let j = 0; j < s.imageFiles.length; j++) {
+          const file = s.imageFiles[j];
+          const ext = file.name.split(".").pop() ?? "jpg";
+          const url = await uploadImage(
+            file,
+            `${user.id}/${travi.id}/stops/${i}-${j}.${ext}`
           );
+          if (url) imageUrls.push(url);
         }
         return {
           travi_id: travi.id,
@@ -1627,7 +1656,8 @@ export default function PlanPage() {
           type: STOP_TYPE_MAP[s.type],
           emoji: s.emoji,
           order_index: i,
-          image_url: imageUrl,
+          image_urls: imageUrls,
+          image_url: imageUrls[0] ?? null,
         };
       })
     );

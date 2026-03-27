@@ -6,6 +6,7 @@
 -- Add image columns (safe to run multiple times)
 alter table public.traviis add column if not exists cover_image_url text;
 alter table public.stops    add column if not exists image_url       text;
+alter table public.stops    add column if not exists image_urls      text[] default '{}';
 
 -- Create storage bucket for images
 insert into storage.buckets (id, name, public)

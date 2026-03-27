@@ -35,7 +35,10 @@ export default function TraviCard({ travi }: { travi: Travi }) {
         <div
           style={{
             height: "200px",
-            background: travi.coverGradient,
+            background: travi.coverImageUrl ? "transparent" : travi.coverGradient,
+            backgroundImage: travi.coverImageUrl ? `url(${travi.coverImageUrl})` : undefined,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
             position: "relative",
             display: "flex",
             alignItems: "flex-end",
