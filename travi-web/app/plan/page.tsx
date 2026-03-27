@@ -31,6 +31,25 @@ type NewStop = {
   imagePreview?: string;
 };
 
+type NominatimResult = {
+  name: string;
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: { country?: string; country_code?: string; city?: string; town?: string; county?: string };
+};
+
+const toFlag = (cc: string) =>
+  [...cc.toUpperCase()].map((c) => String.fromCodePoint(c.charCodeAt(0) + 127397)).join("");
+
+const nominatimToCity = (r: NominatimResult): City => ({
+  name: r.address?.city ?? r.address?.town ?? r.address?.county ?? r.name.split(",")[0].trim(),
+  country: r.address?.country ?? r.display_name.split(",").at(-1)?.trim() ?? "",
+  flag: r.address?.country_code ? toFlag(r.address.country_code) : "🌍",
+  lat: parseFloat(r.lat),
+  lon: parseFloat(r.lon),
+});
+
 // ─── Data ──────────────────────────────────────────────────────────
 
 const CITIES: City[] = [
@@ -95,172 +114,119 @@ function projectCity(
   return { x: cx + x, y: cy + y, z };
 }
 
-// ─── Globe Canvas ──────────────────────────────────────────────────
+// ─── Globe Canvas (Three.js) ───────────────────────────────────────
 
 function GlobeCanvas({
   size = 320,
-  selectedCity = null,
   speedMultiplier = 1,
 }: {
   size?: number;
   selectedCity?: City | null;
   speedMultiplier?: number;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef({ angle: 0, speed: speedMultiplier, selectedCity });
+  const mountRef = useRef<HTMLDivElement>(null);
+  const speedRef = useRef(speedMultiplier);
+  speedRef.current = speedMultiplier;
 
   useEffect(() => {
-    stateRef.current.speed = speedMultiplier;
-    stateRef.current.selectedCity = selectedCity;
-  }, [speedMultiplier, selectedCity]);
+    const mount = mountRef.current;
+    if (!mount) return;
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let renderer: any = null;
     let animId: number;
+    let mounted = true;
 
-    const draw = () => {
-      const { angle } = stateRef.current;
-      const sc = stateRef.current.selectedCity;
-      const W = canvas.width;
-      const H = canvas.height;
-      const cx = W / 2;
-      const cy = H / 2;
-      const R = Math.min(W, H) / 2 - 14;
+    import("three").then((THREE) => {
+      if (!mounted || !mountRef.current) return;
 
-      ctx.clearRect(0, 0, W, H);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+      camera.position.z = 2.6;
 
-      // ── Outer atmosphere glow
-      const atmo = ctx.createRadialGradient(cx, cy, R * 0.78, cx, cy, R * 1.45);
-      atmo.addColorStop(0, "rgba(56, 148, 255, 0.28)");
-      atmo.addColorStop(0.5, "rgba(30, 80, 200, 0.1)");
-      atmo.addColorStop(1, "rgba(0, 0, 0, 0)");
-      ctx.fillStyle = atmo;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R * 1.45, 0, Math.PI * 2);
-      ctx.fill();
+      const ren = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      ren.setSize(size, size);
+      mountRef.current.appendChild(ren.domElement);
+      renderer = ren;
 
-      // ── Base sphere
-      const sphere = ctx.createRadialGradient(cx - R * 0.28, cy - R * 0.32, R * 0.04, cx, cy, R);
-      sphere.addColorStop(0, "#2e74b8");
-      sphere.addColorStop(0.3, "#1b4d82");
-      sphere.addColorStop(0.65, "#0e3058");
-      sphere.addColorStop(1, "#061828");
-      ctx.fillStyle = sphere;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fill();
+      // Lighting — mimic sunlight from upper-right
+      scene.add(new THREE.AmbientLight(0x1a2035, 3));
+      const sun = new THREE.DirectionalLight(0xfff4e0, 2.4);
+      sun.position.set(5, 2, 4);
+      scene.add(sun);
+      // Soft fill light from the back
+      const fill = new THREE.DirectionalLight(0x3355aa, 0.4);
+      fill.position.set(-4, -1, -3);
+      scene.add(fill);
 
-      // ── Clip for grid + dots
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, R - 0.5, 0, Math.PI * 2);
-      ctx.clip();
+      // Earth sphere
+      const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+      const earthMat = new THREE.MeshPhongMaterial({
+        specular: new THREE.Color(0x1a3a6e),
+        shininess: 28,
+      });
+      const earth = new THREE.Mesh(earthGeo, earthMat);
+      scene.add(earth);
 
-      // Equator
-      ctx.strokeStyle = "rgba(100, 200, 255, 0.22)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, R, R * 0.07, 0, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Latitude lines
-      [-60, -30, 30, 60].forEach((lat) => {
-        const latRad = (lat * Math.PI) / 180;
-        const yLat = cy + Math.sin(latRad) * R;
-        const rLat = Math.cos(latRad) * R;
-        ctx.strokeStyle = "rgba(100, 200, 255, 0.1)";
-        ctx.lineWidth = 0.6;
-        ctx.beginPath();
-        ctx.ellipse(cx, yLat, rLat, rLat * 0.09, 0, 0, Math.PI * 2);
-        ctx.stroke();
+      // Load satellite texture
+      const loader = new THREE.TextureLoader();
+      loader.load("/earth.jpg", (tex) => {
+        earthMat.map = tex;
+        earthMat.needsUpdate = true;
       });
 
-      // Longitude lines
-      for (let lon = 0; lon < 360; lon += 30) {
-        const adj = ((lon + angle) % 360) * (Math.PI / 180);
-        const cosA = Math.cos(adj);
-        const a = Math.abs(cosA) * R;
-        ctx.strokeStyle = cosA > 0 ? "rgba(100, 200, 255, 0.18)" : "rgba(100, 200, 255, 0.04)";
-        ctx.lineWidth = 0.65;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, a, R, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      // Atmosphere shell — thin blue haze
+      const atmosGeo = new THREE.SphereGeometry(1.04, 32, 32);
+      const atmosMat = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(0x2277ff),
+        transparent: true,
+        opacity: 0.07,
+        side: THREE.BackSide,
+      });
+      scene.add(new THREE.Mesh(atmosGeo, atmosMat));
 
-      // City dots
-      const now = Date.now();
-      CITIES.forEach((city) => {
-        const pt = projectCity(city.lat, city.lon, angle, cx, cy, R);
-        if (!pt) return;
-        const depth = 0.35 + (pt.z / R) * 0.58;
-        const isSel = sc?.name === city.name;
+      // Outer glow ring
+      const glowGeo = new THREE.SphereGeometry(1.14, 32, 32);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0x1144cc),
+        transparent: true,
+        opacity: 0.04,
+        side: THREE.BackSide,
+      });
+      scene.add(new THREE.Mesh(glowGeo, glowMat));
 
-        if (isSel) {
-          const pulse = 0.5 + 0.5 * Math.sin(now / 240);
-          // Outer pulse ring
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 12 + pulse * 6, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(201, 168, 76, ${0.1 + pulse * 0.08})`;
-          ctx.fill();
-          // Mid ring
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(201, 168, 76, 0.55)";
-          ctx.fill();
-          // Core
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = "#e8c96a";
-          ctx.fill();
-        } else {
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 1.8, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(180, 225, 255, ${depth})`;
-          ctx.fill();
+      const animate = () => {
+        if (!mounted) return;
+        animId = requestAnimationFrame(animate);
+        earth.rotation.y += 0.0015 * speedRef.current;
+        ren.render(scene, camera);
+      };
+      animate();
+    });
+
+    return () => {
+      mounted = false;
+      cancelAnimationFrame(animId);
+      if (renderer) {
+        renderer.dispose();
+        if (mountRef.current?.contains(renderer.domElement)) {
+          mountRef.current.removeChild(renderer.domElement);
         }
-      });
-
-      ctx.restore();
-
-      // ── Specular highlight
-      const spec = ctx.createRadialGradient(cx - R * 0.4, cy - R * 0.38, 0, cx - R * 0.1, cy - R * 0.1, R * 0.82);
-      spec.addColorStop(0, "rgba(255, 255, 255, 0.22)");
-      spec.addColorStop(0.3, "rgba(255, 255, 255, 0.07)");
-      spec.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = spec;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fill();
-
-      // ── Edge vignette
-      const edge = ctx.createRadialGradient(cx, cy, R * 0.62, cx, cy, R);
-      edge.addColorStop(0, "rgba(0,0,0,0)");
-      edge.addColorStop(1, "rgba(0,0,0,0.52)");
-      ctx.fillStyle = edge;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fill();
-
-      stateRef.current.angle += stateRef.current.speed * 0.22;
-      animId = requestAnimationFrame(draw);
+      }
     };
-
-    draw();
-    return () => cancelAnimationFrame(animId);
-  }, []);
+  }, [size]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={size}
-      height={size}
+    <div
+      ref={mountRef}
       style={{
-        display: "block",
-        filter: "drop-shadow(0 0 48px rgba(50, 130, 255, 0.4)) drop-shadow(0 0 100px rgba(30, 80, 200, 0.2))",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        filter:
+          "drop-shadow(0 0 48px rgba(50,130,255,0.45)) drop-shadow(0 0 100px rgba(30,80,200,0.25))",
       }}
     />
   );
@@ -294,12 +260,14 @@ function Stars() {
 function GlobeStep({
   query,
   onQueryChange,
-  filtered,
+  searchResults,
+  searchLoading,
   onSelectCity,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
-  filtered: City[];
+  searchResults: City[];
+  searchLoading: boolean;
   onSelectCity: (city: City) => void;
 }) {
   const popular = CITIES.slice(0, 8);
@@ -424,7 +392,7 @@ function GlobeStep({
         </div>
 
         {/* Dropdown */}
-        {filtered.length > 0 && (
+        {(searchResults.length > 0 || searchLoading) && (
           <div
             style={{
               position: "absolute",
@@ -440,7 +408,12 @@ function GlobeStep({
               boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
             }}
           >
-            {filtered.map((city) => (
+            {searchLoading && searchResults.length === 0 && (
+              <div style={{ padding: "16px 20px", color: "rgba(255,255,255,0.4)", fontSize: "14px" }}>
+                Searching…
+              </div>
+            )}
+            {searchResults.map((city) => (
               <button
                 key={city.name + city.country}
                 onClick={() => onSelectCity(city)}
@@ -813,6 +786,28 @@ function BuilderStep({
   coverPreview: string | null;
   onCoverImageChange: (file: File, preview: string) => void;
 }) {
+  const [locationSugs, setLocationSugs] = useState<string[]>([]);
+  const locDebRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopImgRef = useRef<HTMLInputElement>(null);
+
+  const handleLocationChange = (q: string) => {
+    onNewStopChange({ location: q });
+    if (locDebRef.current) clearTimeout(locDebRef.current);
+    if (!q.trim() || q.length < 2) { setLocationSugs([]); return; }
+    locDebRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&accept-language=en`,
+          { headers: { "User-Agent": "TraviApp/1.0" } }
+        );
+        const data: NominatimResult[] = await res.json();
+        setLocationSugs(data.map((r) =>
+          r.display_name.split(",").slice(0, 3).join(",").trim()
+        ));
+      } catch { /* ignore */ }
+    }, 380);
+  };
+
   return (
     <div
       style={{
@@ -1044,22 +1039,59 @@ function BuilderStep({
               onFocus={(e) => (e.currentTarget.style.borderColor = `${STOP_CONFIG[addingType!].color}70`)}
               onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
             />
-            <div style={{ display: "flex", gap: "10px" }}>
-              <div style={{ position: "relative", flex: 1 }}>
-                <MapPin
-                  size={14}
-                  color="rgba(255,255,255,0.35)"
-                  style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
-                />
-                <input
-                  placeholder={`Location — e.g. Shinjuku, ${city.name}`}
-                  value={newStop.location}
-                  onChange={(e) => onNewStopChange({ location: e.target.value })}
-                  style={{ ...fieldStyle, paddingLeft: "36px" }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = `${STOP_CONFIG[addingType!].color}70`)}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
-                />
-              </div>
+            {/* Location with autocomplete */}
+            <div style={{ position: "relative" }}>
+              <MapPin
+                size={14}
+                color="rgba(255,255,255,0.35)"
+                style={{ position: "absolute", left: "14px", top: "13px", pointerEvents: "none", zIndex: 1 }}
+              />
+              <input
+                placeholder={`Location — search an address…`}
+                value={newStop.location}
+                onChange={(e) => handleLocationChange(e.target.value)}
+                onFocus={(e) => (e.currentTarget.style.borderColor = `${STOP_CONFIG[addingType!].color}70`)}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                  setTimeout(() => setLocationSugs([]), 180);
+                }}
+                style={{ ...fieldStyle, paddingLeft: "36px" }}
+              />
+              {locationSugs.length > 0 && (
+                <div style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  left: 0, right: 0,
+                  backgroundColor: "#0b1d35",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "12px",
+                  overflow: "hidden",
+                  zIndex: 50,
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
+                }}>
+                  {locationSugs.map((s, i) => (
+                    <button
+                      key={i}
+                      onMouseDown={() => {
+                        onNewStopChange({ location: s });
+                        setLocationSugs([]);
+                      }}
+                      style={{
+                        width: "100%", display: "flex", alignItems: "center", gap: "10px",
+                        padding: "11px 16px", border: "none",
+                        borderBottom: i < locationSugs.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                        background: "none", cursor: "pointer", textAlign: "left",
+                        fontFamily: "inherit",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    >
+                      <MapPin size={12} color="#c9a84c" style={{ flexShrink: 0 }} />
+                      <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "13px", lineHeight: 1.35 }}>{s}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Rating */}
@@ -1102,6 +1134,56 @@ function BuilderStep({
               onFocus={(e) => (e.currentTarget.style.borderColor = `${STOP_CONFIG[addingType!].color}70`)}
               onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
             />
+
+            {/* Stop photo */}
+            <div>
+              <input
+                ref={stopImgRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  onNewStopChange({ imageFile: file, imagePreview: URL.createObjectURL(file) });
+                }}
+              />
+              {newStop.imagePreview ? (
+                <div style={{ position: "relative", borderRadius: "12px", overflow: "hidden", height: "130px" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={newStop.imagePreview} alt="Stop" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <button
+                    onClick={() => {
+                      onNewStopChange({ imageFile: undefined, imagePreview: undefined });
+                      if (stopImgRef.current) stopImgRef.current.value = "";
+                    }}
+                    style={{
+                      position: "absolute", top: "8px", right: "8px",
+                      background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "6px",
+                      color: "#fff", fontSize: "12px", fontWeight: "600", cursor: "pointer",
+                      padding: "4px 8px", fontFamily: "inherit",
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => stopImgRef.current?.click()}
+                  style={{
+                    width: "100%", padding: "11px 16px", borderRadius: "10px",
+                    border: "1.5px dashed rgba(255,255,255,0.13)", background: "none",
+                    display: "flex", alignItems: "center", gap: "8px",
+                    color: "rgba(255,255,255,0.38)", fontSize: "13px", fontWeight: "500",
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.4)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.13)")}
+                >
+                  📸 Add a photo to this stop
+                </button>
+              )}
+            </div>
 
             <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
               <button
@@ -1206,13 +1288,22 @@ function BuilderStep({
                     <div
                       style={{
                         flex: 1,
-                        padding: "16px 20px",
                         borderRadius: "16px",
                         border: "1px solid rgba(255,255,255,0.08)",
                         backgroundColor: "rgba(255,255,255,0.04)",
+                        overflow: "hidden",
                         position: "relative",
                       }}
                     >
+                      {stop.imagePreview && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={stop.imagePreview}
+                          alt={stop.name}
+                          style={{ width: "100%", height: "120px", objectFit: "cover", display: "block" }}
+                        />
+                      )}
+                      <div style={{ padding: "16px 20px" }}>
                       <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginBottom: "6px" }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
@@ -1282,6 +1373,7 @@ function BuilderStep({
                           &ldquo;{stop.review}&rdquo;
                         </p>
                       )}
+                      </div>{/* /padding */}
                     </div>
                   </div>
                 );
@@ -1366,15 +1458,30 @@ export default function PlanPage() {
   const [publishError, setPublishError] = useState<string | null>(null);
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<City[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const filtered =
-    query.length > 0
-      ? CITIES.filter(
-          (c) =>
-            c.name.toLowerCase().includes(query.toLowerCase()) ||
-            c.country.toLowerCase().includes(query.toLowerCase())
-        ).slice(0, 6)
-      : [];
+  const handleQueryChange = (q: string) => {
+    setQuery(q);
+    if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
+    if (!q.trim()) { setSearchResults([]); setSearchLoading(false); return; }
+    setSearchLoading(true);
+    queryDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1&accept-language=en`,
+          { headers: { "User-Agent": "TraviApp/1.0" } }
+        );
+        const data: NominatimResult[] = await res.json();
+        setSearchResults(data.map(nominatimToCity));
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 380);
+  };
 
   const handleSelectCity = (city: City) => {
     setSelectedCity(city);
@@ -1521,8 +1628,9 @@ export default function PlanPage() {
       {step === "globe" && (
         <GlobeStep
           query={query}
-          onQueryChange={setQuery}
-          filtered={filtered}
+          onQueryChange={handleQueryChange}
+          searchResults={searchResults}
+          searchLoading={searchLoading}
           onSelectCity={handleSelectCity}
         />
       )}
