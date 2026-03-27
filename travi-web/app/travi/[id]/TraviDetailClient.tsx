@@ -235,7 +235,8 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
     });
 
     if (error) {
-      setInviteError("Failed to create invite. Try again.");
+      console.error("travi_shares insert error:", error);
+      setInviteError(error.message ?? "Failed to create invite. Try again.");
     } else {
       const inviteUrl = `${window.location.origin}/invite/${token}`;
       setLatestInvite({ url: inviteUrl, email: inviteEmail.trim() });
