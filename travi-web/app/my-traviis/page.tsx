@@ -62,9 +62,11 @@ function dbToTravi(row: any, profile: { name: string; handle: string }, idx: num
 export default function MyTraviisPage() {
   const [user, setUser] = useState<User | null>(null);
   const [traviis, setTraviis] = useState<Travi[]>([]);
+  const [sharedTraviis, setSharedTraviis] = useState<Travi[]>([]);
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState("Traveler");
   const [profileHandle, setProfileHandle] = useState("@you");
+  const [tab, setTab] = useState<"mine" | "shared">("mine");
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this Travi? This can't be undone.")) return;
@@ -102,6 +104,29 @@ export default function MyTraviisPage() {
 
         if (rows) {
           setTraviis(rows.map((r, i) => dbToTravi(r, { name, handle }, i)));
+        }
+
+        // Fetch traviis shared with this user
+        const { data: shareRows } = await supabase
+          .from("travi_shares")
+          .select("travi_id, traviis(*, stops(*))")
+          .eq("accepted_by", user.id);
+
+        if (shareRows && shareRows.length > 0) {
+          const shared: Travi[] = [];
+          for (let i = 0; i < shareRows.length; i++) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const row = (shareRows[i] as any).traviis;
+            if (!row) continue;
+            // Fetch the owner's profile for display
+            const { data: ownerProfile } = await supabase
+              .from("profiles")
+              .select("name, handle")
+              .eq("id", row.user_id)
+              .single();
+            shared.push(dbToTravi(row, { name: ownerProfile?.name ?? "Traveler", handle: ownerProfile?.handle ?? "@traveler" }, i));
+          }
+          setSharedTraviis(shared);
         }
       }
 
@@ -390,63 +415,70 @@ export default function MyTraviisPage() {
         </div>
       </div>
 
-      {/* Trips grid */}
+      {/* Tabs + Grid */}
       <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "40px 24px" }}>
-        <h2 style={{ fontSize: "20px", fontWeight: "700", color: "#0f1729", marginBottom: "24px" }}>
-          Your Trips
-        </h2>
 
-        {traviis.length > 0 ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-              gap: "28px",
-            }}
+        {/* Tab buttons */}
+        <div style={{ display: "flex", gap: "4px", marginBottom: "32px", backgroundColor: "#ffffff", borderRadius: "14px", padding: "4px", border: "1px solid #e7e5e0", width: "fit-content" }}>
+          <button
+            onClick={() => setTab("mine")}
+            style={{ padding: "9px 22px", borderRadius: "10px", border: "none", background: tab === "mine" ? "linear-gradient(135deg, #0f1729, #1a2744)" : "none", color: tab === "mine" ? "#ffffff" : "#9ca3af", fontWeight: "700", fontSize: "14px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
           >
-            {traviis.map((travi) => (
-              <div key={travi.id}>
-                <TraviCard travi={travi} />
-                <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
-                  <Link
-                    href={`/travi/${travi.id}/edit`}
-                    style={{
-                      flex: 1,
-                      textAlign: "center",
-                      padding: "9px 0",
-                      borderRadius: "10px",
-                      border: "1px solid #e7e5e0",
-                      backgroundColor: "#ffffff",
-                      color: "#0f1729",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      textDecoration: "none",
-                    }}
-                  >
-                    ✏️ Edit
-                  </Link>
-                  <button
-                    onClick={() => handleDelete(travi.id)}
-                    style={{
-                      padding: "9px 16px",
-                      borderRadius: "10px",
-                      border: "1px solid rgba(239,68,68,0.25)",
-                      backgroundColor: "rgba(239,68,68,0.04)",
-                      color: "#dc2626",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    Delete
-                  </button>
+            My Travis {traviis.length > 0 && <span style={{ marginLeft: "4px", fontSize: "12px", opacity: 0.7 }}>({traviis.length})</span>}
+          </button>
+          <button
+            onClick={() => setTab("shared")}
+            style={{ padding: "9px 22px", borderRadius: "10px", border: "none", background: tab === "shared" ? "linear-gradient(135deg, #0f1729, #1a2744)" : "none", color: tab === "shared" ? "#ffffff" : "#9ca3af", fontWeight: "700", fontSize: "14px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+          >
+            Shared with Me {sharedTraviis.length > 0 && <span style={{ marginLeft: "4px", fontSize: "12px", opacity: 0.7 }}>({sharedTraviis.length})</span>}
+          </button>
+        </div>
+
+        {tab === "mine" ? (
+          traviis.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "28px" }}>
+              {traviis.map((travi) => (
+                <div key={travi.id}>
+                  <TraviCard travi={travi} />
+                  <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                    <Link
+                      href={`/travi/${travi.id}/edit`}
+                      style={{ flex: 1, textAlign: "center", padding: "9px 0", borderRadius: "10px", border: "1px solid #e7e5e0", backgroundColor: "#ffffff", color: "#0f1729", fontWeight: "600", fontSize: "13px", textDecoration: "none" }}
+                    >
+                      ✏️ Edit
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(travi.id)}
+                      style={{ padding: "9px 16px", borderRadius: "10px", border: "1px solid rgba(239,68,68,0.25)", backgroundColor: "rgba(239,68,68,0.04)", color: "#dc2626", fontWeight: "600", fontSize: "13px", cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState />
+          )
         ) : (
-          <EmptyState />
+          sharedTraviis.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "28px" }}>
+              {sharedTraviis.map((travi) => (
+                <div key={travi.id}>
+                  <TraviCard travi={travi} />
+                  <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "8px", backgroundColor: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.2)", textAlign: "center" }}>
+                    <span style={{ fontSize: "12px", color: "#b8962a", fontWeight: "600" }}>Shared by {travi.author.name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "80px 24px" }}>
+              <span style={{ fontSize: "56px" }}>📬</span>
+              <h3 style={{ color: "#0f1729", fontWeight: "700", fontSize: "20px", marginTop: "16px", marginBottom: "8px" }}>No shared Travis yet</h3>
+              <p style={{ color: "#9ca3af", fontSize: "15px" }}>When someone shares a Travi with you, it will appear here.</p>
+            </div>
+          )
         )}
 
         {/* Explore CTA */}

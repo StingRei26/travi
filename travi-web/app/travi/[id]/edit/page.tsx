@@ -319,15 +319,17 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
         image_url: finalUrls[0] ?? null,
       };
       if (s.isNew) {
-        await supabase.from("stops").insert({
+        const { error: stopErr } = await supabase.from("stops").insert({
           ...payload,
           travi_id: id,
           user_id: user.id,
           type: STOP_TYPE_MAP[s.type],
           emoji: s.emoji,
         });
+        if (stopErr) { setSaveError("Failed to save stops. Please try again."); setSaving(false); return; }
       } else {
-        await supabase.from("stops").update(payload).eq("id", s.id);
+        const { error: stopErr } = await supabase.from("stops").update(payload).eq("id", s.id);
+        if (stopErr) { setSaveError("Failed to save stops. Please try again."); setSaving(false); return; }
       }
     }
 
