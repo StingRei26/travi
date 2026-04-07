@@ -88,6 +88,8 @@ const STOP_CONFIG: Record<StopType, { label: string; emoji: string; color: strin
   experience: { label: "Experience", emoji: "✨", color: "#a78bfa", desc: "Unique moments"         },
 };
 
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
 // ─── Static star positions (deterministic, no Math.random) ────────
 
 const STARS = Array.from({ length: 130 }, (_, i) => ({
@@ -127,6 +129,8 @@ function GlobeCanvas({
   const mountRef = useRef<HTMLDivElement>(null);
   const speedRef = useRef(speedMultiplier);
   speedRef.current = speedMultiplier;
+  const isDraggingRef = useRef(false);
+  const lastXRef = useRef(0);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -149,6 +153,7 @@ function GlobeCanvas({
       ren.setSize(size, size);
       mountRef.current.appendChild(ren.domElement);
       renderer = ren;
+      ren.domElement.style.cursor = "grab";
 
       // Lighting — sunlight from upper-right
       scene.add(new THREE.AmbientLight(0x112244, 2.2));
@@ -193,7 +198,7 @@ function GlobeCanvas({
       // Inner atmosphere — visible rim glow from behind
       const atmos1Geo = new THREE.SphereGeometry(1.025, 48, 48);
       const atmos1Mat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(0x3388ff),
+        color: new THREE.Color(0x66bbff),
         transparent: true,
         opacity: 0.18,
         side: THREE.BackSide,
@@ -204,7 +209,7 @@ function GlobeCanvas({
       // Outer soft halo
       const atmos2Geo = new THREE.SphereGeometry(1.12, 48, 48);
       const atmos2Mat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0x1155cc),
+        color: new THREE.Color(0x44aaff),
         transparent: true,
         opacity: 0.055,
         side: THREE.BackSide,
@@ -219,12 +224,80 @@ function GlobeCanvas({
         ren.render(scene, camera);
       };
       animate();
+
+      // ── Interaction: Drag to rotate ──
+      const onMouseDown = (e: MouseEvent) => {
+        isDraggingRef.current = true;
+        lastXRef.current = e.clientX;
+        if (ren.domElement) ren.domElement.style.cursor = "grabbing";
+      };
+      const onMouseMove = (e: MouseEvent) => {
+        if (!isDraggingRef.current) return;
+        const deltaX = e.clientX - lastXRef.current;
+        earth.rotation.y -= deltaX * 0.01;
+        lastXRef.current = e.clientX;
+      };
+      const onMouseUp = () => {
+        isDraggingRef.current = false;
+        if (ren.domElement) ren.domElement.style.cursor = "grab";
+      };
+      const onMouseLeave = () => {
+        isDraggingRef.current = false;
+        if (ren.domElement) ren.domElement.style.cursor = "grab";
+      };
+
+      // ── Wheel zoom ──
+      const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        camera.position.z = Math.max(1.5, Math.min(5.0, camera.position.z + e.deltaY * 0.005));
+      };
+
+      // ── Touch support ──
+      let touchStartX = 0;
+      const onTouchStart = (e: TouchEvent) => {
+        if (e.touches.length === 1) {
+          isDraggingRef.current = true;
+          touchStartX = e.touches[0].clientX;
+        }
+      };
+      const onTouchMove = (e: TouchEvent) => {
+        if (e.touches.length === 1 && isDraggingRef.current) {
+          const deltaX = e.touches[0].clientX - touchStartX;
+          earth.rotation.y -= deltaX * 0.01;
+          touchStartX = e.touches[0].clientX;
+        } else if (e.touches.length === 2) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          // Pinch zoom logic would go here if we tracked previous distance
+        }
+      };
+      const onTouchEnd = () => {
+        isDraggingRef.current = false;
+      };
+
+      ren.domElement.addEventListener("mousedown", onMouseDown);
+      ren.domElement.addEventListener("mousemove", onMouseMove);
+      ren.domElement.addEventListener("mouseup", onMouseUp);
+      ren.domElement.addEventListener("mouseleave", onMouseLeave);
+      ren.domElement.addEventListener("wheel", onWheel, { passive: false });
+      ren.domElement.addEventListener("touchstart", onTouchStart);
+      ren.domElement.addEventListener("touchmove", onTouchMove);
+      ren.domElement.addEventListener("touchend", onTouchEnd);
     });
 
     return () => {
       mounted = false;
       cancelAnimationFrame(animId);
       if (renderer) {
+        renderer.domElement.removeEventListener("mousedown", (e: any) => {});
+        renderer.domElement.removeEventListener("mousemove", (e: any) => {});
+        renderer.domElement.removeEventListener("mouseup", (e: any) => {});
+        renderer.domElement.removeEventListener("mouseleave", (e: any) => {});
+        renderer.domElement.removeEventListener("wheel", (e: any) => {});
+        renderer.domElement.removeEventListener("touchstart", (e: any) => {});
+        renderer.domElement.removeEventListener("touchmove", (e: any) => {});
+        renderer.domElement.removeEventListener("touchend", (e: any) => {});
         renderer.dispose();
         if (mountRef.current?.contains(renderer.domElement)) {
           mountRef.current.removeChild(renderer.domElement);
@@ -242,7 +315,7 @@ function GlobeCanvas({
         borderRadius: "50%",
         overflow: "hidden",
         filter:
-          "drop-shadow(0 0 40px rgba(50,140,255,0.55)) drop-shadow(0 0 90px rgba(30,90,220,0.30))",
+          "drop-shadow(0 0 40px rgba(80,170,255,0.55)) drop-shadow(0 0 90px rgba(50,140,255,0.30))",
       }}
     />
   );
@@ -286,6 +359,40 @@ function GlobeStep({
   searchLoading: boolean;
   onSelectCity: (city: City) => void;
 }) {
+  const [userLocation, setUserLocation] = useState<{city: string; country: string} | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  useEffect(() => {
+    setLocationLoading(true);
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+              { headers: { "User-Agent": "TraviApp/1.0" } }
+            );
+            const data = await res.json();
+            const city = data.address?.city ?? data.address?.town ?? data.address?.county ?? "Unknown";
+            const country = data.address?.country ?? "Unknown";
+            setUserLocation({ city, country });
+          } catch {
+            setUserLocation(null);
+          } finally {
+            setLocationLoading(false);
+          }
+        },
+        () => {
+          setLocationLoading(false);
+          setUserLocation(null);
+        }
+      );
+    } else {
+      setLocationLoading(false);
+    }
+  }, []);
+
   const popular = CITIES.slice(0, 8);
   return (
     <div
@@ -366,6 +473,35 @@ function GlobeStep({
 
       {/* Globe */}
       <GlobeCanvas size={320} />
+
+      {/* Location indicator pill */}
+      {(locationLoading || userLocation) && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "8px 16px",
+          borderRadius: "100px",
+          border: "1px solid rgba(100,220,100,0.3)",
+          backgroundColor: "rgba(100,220,100,0.08)",
+          color: "rgba(200,255,200,0.85)",
+          fontSize: "13px",
+          fontWeight: "500",
+        }}>
+          <div style={{
+            width: "8px",
+            height: "8px",
+            borderRadius: "50%",
+            backgroundColor: "#4ade80",
+            animation: "locationPulse 1.5s ease-in-out infinite",
+          }} />
+          {locationLoading ? (
+            "Detecting your location…"
+          ) : userLocation ? (
+            `📍 You're in ${userLocation.city}, ${userLocation.country}`
+          ) : null}
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ width: "100%", maxWidth: "480px", position: "relative" }}>
@@ -661,6 +797,10 @@ function FlyingStep({ city }: { city: City }) {
           0%, 100% { transform: scale(1);    opacity: 0.6; }
           50%       { transform: scale(1.08); opacity: 1;   }
         }
+        @keyframes locationPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(1.3); }
+        }
       `}</style>
     </div>
   );
@@ -676,6 +816,59 @@ function CoverImagePicker({
   onChange: (file: File, preview: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [offset, setOffset] = useState({ x: 50, y: 50 });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0, ox: 50, oy: 50 });
+
+  const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      ox: offset.x,
+      oy: offset.y,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    const deltaX = e.clientX - dragStartRef.current.x;
+    const deltaY = e.clientY - dragStartRef.current.y;
+    setOffset({
+      x: clamp(dragStartRef.current.ox - deltaX / 2, 0, 100),
+      y: clamp(dragStartRef.current.oy - deltaY / 2, 0, 100),
+    });
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      ox: offset.x,
+      oy: offset.y,
+    };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDraggingRef.current) return;
+    const deltaX = e.touches[0].clientX - dragStartRef.current.x;
+    const deltaY = e.touches[0].clientY - dragStartRef.current.y;
+    setOffset({
+      x: clamp(dragStartRef.current.ox - deltaX / 2, 0, 100),
+      y: clamp(dragStartRef.current.oy - deltaY / 2, 0, 100),
+    });
+  };
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false;
+  };
 
   return (
     <div style={{ marginBottom: "28px" }}>
@@ -701,12 +894,37 @@ function CoverImagePicker({
           if (!file) return;
           const url = URL.createObjectURL(file);
           onChange(file, url);
+          setOffset({ x: 50, y: 50 });
         }}
       />
       {preview ? (
-        <div style={{ position: "relative", borderRadius: "16px", overflow: "hidden", height: "180px" }}>
+        <div
+          style={{
+            position: "relative",
+            borderRadius: "16px",
+            overflow: "hidden",
+            height: "180px",
+          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img
+            src={preview}
+            alt="Cover"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: `${offset.x}% ${offset.y}%`,
+              cursor: isDraggingRef.current ? "grabbing" : "grab",
+            }}
+          />
           <button
             onClick={() => inputRef.current?.click()}
             style={{
@@ -726,6 +944,9 @@ function CoverImagePicker({
           >
             Change Photo
           </button>
+          <p style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px", textAlign: "center", marginTop: "6px", position: "absolute", bottom: "0", left: "0", right: "0", padding: "4px" }}>
+            ✋ Drag to reposition
+          </p>
         </div>
       ) : (
         <button
@@ -785,6 +1006,10 @@ function BuilderStep({
   publishError,
   coverPreview,
   onCoverImageChange,
+  tripMonth,
+  onTripMonthChange,
+  tripYear,
+  onTripYearChange,
 }: {
   city: City;
   stops: Stop[];
@@ -801,6 +1026,10 @@ function BuilderStep({
   publishError: string | null;
   coverPreview: string | null;
   onCoverImageChange: (file: File, preview: string) => void;
+  tripMonth: string;
+  onTripMonthChange: (v: string) => void;
+  tripYear: string;
+  onTripYearChange: (v: string) => void;
 }) {
   const [locationSugs, setLocationSugs] = useState<string[]>([]);
   const locDebRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -911,7 +1140,7 @@ function BuilderStep({
               fontFamily: "inherit",
             }}
           >
-            {publishing ? "Saving…" : "Publish Travi →"}
+            {publishing ? "Saving…" : "Save Travi ✈️"}
           </button>
         </div>
       </div>
@@ -972,6 +1201,73 @@ function BuilderStep({
           onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")}
           onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
         />
+      </div>
+
+      {/* ── When was this trip? ── */}
+      <div style={{ marginBottom: "32px" }}>
+        <label
+          style={{
+            color: "rgba(255,255,255,0.4)",
+            fontSize: "11px",
+            fontWeight: "700",
+            letterSpacing: "1.8px",
+            textTransform: "uppercase",
+            display: "block",
+            marginBottom: "10px",
+          }}
+        >
+          When was this trip?
+        </label>
+        <div style={{ display: "flex", gap: "12px" }}>
+          <select
+            value={tripMonth}
+            onChange={(e) => onTripMonthChange(e.target.value)}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: "12px",
+              color: "#ffffff",
+              padding: "12px 16px",
+              fontSize: "15px",
+              fontFamily: "inherit",
+              outline: "none",
+              cursor: "pointer",
+              transition: "border-color 0.15s",
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+          >
+            <option value="">Month</option>
+            {MONTHS.map((month, idx) => (
+              <option key={idx} value={month}>{month}</option>
+            ))}
+          </select>
+          <select
+            value={tripYear}
+            onChange={(e) => onTripYearChange(e.target.value)}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: "12px",
+              color: "#ffffff",
+              padding: "12px 16px",
+              fontSize: "15px",
+              fontFamily: "inherit",
+              outline: "none",
+              cursor: "pointer",
+              transition: "border-color 0.15s",
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+          >
+            <option value="">Year</option>
+            {Array.from({ length: 27 }, (_, i) => 2026 - i).map((year) => (
+              <option key={year} value={year.toString()}>{year}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* ── Card type picker ── */}
@@ -1505,6 +1801,8 @@ export default function PlanPage() {
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [tripTitle, setTripTitle] = useState("");
+  const [tripMonth, setTripMonth] = useState("");
+  const [tripYear, setTripYear] = useState("");
   const [addingType, setAddingType] = useState<StopType | null>(null);
   const [newStop, setNewStop] = useState<NewStop>({
     name: "", location: "", rating: 5, review: "", emoji: "", imageFiles: [], imagePreviews: [],
@@ -1607,6 +1905,7 @@ export default function PlanPage() {
         cover_gradient: COVER_GRADIENTS[gradIdx],
         is_public: true,
         tags: [selectedCity.country, selectedCity.name],
+        start_date: tripYear && tripMonth ? `${tripYear}-${String(MONTHS.indexOf(tripMonth)+1).padStart(2,"0")}-01` : null,
       })
       .select()
       .single();
@@ -1712,6 +2011,10 @@ export default function PlanPage() {
           publishError={publishError}
           coverPreview={coverPreview}
           onCoverImageChange={(file, preview) => { setCoverImage(file); setCoverPreview(preview); }}
+          tripMonth={tripMonth}
+          onTripMonthChange={setTripMonth}
+          tripYear={tripYear}
+          onTripYearChange={setTripYear}
         />
       )}
     </main>

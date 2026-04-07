@@ -87,6 +87,10 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
   const editImgRef = useRef<HTMLInputElement>(null);
   const editLocDebRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Lightbox and filtering
+  const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null);
+  const [stopFilter, setStopFilter] = useState<string>("all");
+
   const travi = { ...initialTravi, stops };
 
   // ── Helpers ──────────────────────────────────────────────────────
@@ -235,7 +239,8 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
     });
 
     if (error) {
-      setInviteError("Failed to create invite. Try again.");
+      console.error("travi_shares insert error:", error);
+      setInviteError(error.message ?? "Failed to create invite. Try again.");
     } else {
       const inviteUrl = `${window.location.origin}/invite/${token}`;
       setLatestInvite({ url: inviteUrl, email: inviteEmail.trim() });
@@ -377,13 +382,49 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
               )}
             </div>
 
+            {/* Filter bar */}
+            {stops.length > 0 && (
+              <div style={{ display: "flex", gap: "8px", marginBottom: "28px", overflowX: "auto", paddingBottom: "8px" }}>
+                {[
+                  { label: "All", value: "all" },
+                  { label: "🍽 Restaurant", value: "restaurant" },
+                  { label: "🏨 Hotel", value: "hotel" },
+                  { label: "📍 Attraction", value: "attraction" },
+                  { label: "✨ Experience", value: "experience" },
+                ].map((filter) => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setStopFilter(filter.value)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "8px 16px",
+                      borderRadius: "100px",
+                      border: stopFilter === filter.value ? "1px solid #c9a84c" : "1px solid #e7e5e0",
+                      backgroundColor: stopFilter === filter.value ? "rgba(201,168,76,0.1)" : "#ffffff",
+                      color: stopFilter === filter.value ? "#c9a84c" : "#9ca3af",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {stops.length === 0 ? (
               <p style={{ color: "#9ca3af", fontSize: "15px" }}>No stops added yet.</p>
             ) : (
               <div style={{ position: "relative" }}>
                 <div style={{ position: "absolute", left: "23px", top: "0", bottom: "0", width: "2px", background: "linear-gradient(to bottom, #c9a84c, rgba(201,168,76,0.1))", borderRadius: "1px" }} />
                 <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                  {stops.map((stop, i) => (
+                  {(stopFilter === "all" ? stops : stops.filter(s => s.type === stopFilter)).map((stop, i) => (
                     <div key={stop.id} style={{ display: "flex", gap: "20px", position: "relative" }}>
                       {/* Pin */}
                       <div style={{ width: "48px", height: "48px", borderRadius: "50%", backgroundColor: "#ffffff", border: "3px solid #c9a84c", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0, boxShadow: "0 4px 12px rgba(201,168,76,0.3)", zIndex: 1 }}>
@@ -397,7 +438,8 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
                             {stop.imageUrls.slice(0, 3).map((url, imgIdx) => (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img key={imgIdx} src={url} alt={stop.name}
-                                style={{ flex: 1, minWidth: 0, objectFit: "cover", display: "block", borderRight: imgIdx < stop.imageUrls.length - 1 ? "2px solid #f8f7f4" : "none" }}
+                                onClick={() => setLightbox({ urls: stop.imageUrls, index: imgIdx })}
+                                style={{ flex: 1, minWidth: 0, objectFit: "cover", display: "block", borderRight: imgIdx < stop.imageUrls.length - 1 ? "2px solid #f8f7f4" : "none", cursor: "pointer" }}
                               />
                             ))}
                           </div>
@@ -787,6 +829,47 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Lightbox Modal ── */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.92)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightbox(l => l && l.index > 0 ? { ...l, index: l.index - 1 } : l); }}
+            style={{ position: "absolute", left: "16px", background: "rgba(255,255,255,0.15)", border: "none", color: "white", fontSize: "32px", cursor: "pointer", padding: "12px 18px", borderRadius: "8px" }}
+          >
+            ‹
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox.urls[lightbox.index]} style={{ maxHeight: "85vh", maxWidth: "85vw", borderRadius: "12px", objectFit: "contain" }} />
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightbox(l => l && l.index < l.urls.length - 1 ? { ...l, index: l.index + 1 } : l); }}
+            style={{ position: "absolute", right: "16px", background: "rgba(255,255,255,0.15)", border: "none", color: "white", fontSize: "32px", cursor: "pointer", padding: "12px 18px", borderRadius: "8px" }}
+          >
+            ›
+          </button>
+          <button
+            onClick={() => setLightbox(null)}
+            style={{ position: "absolute", top: "24px", right: "24px", background: "none", border: "none", color: "white", fontSize: "32px", cursor: "pointer" }}
+          >
+            ×
+          </button>
+          <div style={{ position: "absolute", bottom: "24px", display: "flex", gap: "8px" }}>
+            {lightbox.urls.map((_, i) => (
+              <div
+                key={i}
+                onClick={(e) => { e.stopPropagation(); setLightbox(l => l ? { ...l, index: i } : l); }}
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  backgroundColor: i === lightbox.index ? "white" : "rgba(255,255,255,0.4)",
+                  cursor: "pointer",
+                }}
+              />
+            ))}
           </div>
         </div>
       )}

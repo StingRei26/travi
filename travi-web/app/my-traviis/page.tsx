@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, Map, BookOpen, Globe, LogIn } from "lucide-react";
 import TraviCard from "@/components/ui/TraviCard";
@@ -66,13 +66,47 @@ export default function MyTraviisPage() {
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState("Traveler");
   const [profileHandle, setProfileHandle] = useState("@you");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [tab, setTab] = useState<"mine" | "shared">("mine");
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this Travi? This can't be undone.")) return;
     const supabase = createClient();
     await supabase.from("traviis").delete().eq("id", id);
     setTraviis((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    if (!user) return;
+    setUploadingAvatar(true);
+    const supabase = createClient();
+
+    try {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `profiles/${user.id}/avatar.${ext}`;
+
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from("travi-images")
+        .upload(path, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data } = supabase.storage.from("travi-images").getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+
+      // Update profile table
+      await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id);
+
+      setProfileAvatarUrl(publicUrl);
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   useEffect(() => {
@@ -86,7 +120,7 @@ export default function MyTraviisPage() {
         // Fetch profile
         const { data: profile } = await supabase
           .from("profiles")
-          .select("name, handle")
+          .select("name, handle, avatar_url")
           .eq("id", user.id)
           .single();
 
@@ -94,6 +128,7 @@ export default function MyTraviisPage() {
         const handle = profile?.handle ?? "@you";
         setProfileName(name);
         setProfileHandle(handle);
+        setProfileAvatarUrl(profile?.avatar_url ?? null);
 
         // Fetch traviis with stops nested
         const { data: rows } = await supabase
@@ -341,21 +376,62 @@ export default function MyTraviisPage() {
         >
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleAvatarUpload(file);
+                }}
+              />
               <div
+                onClick={() => avatarInputRef.current?.click()}
+                onKeyDown={(e) => { if (e.key === "Enter") avatarInputRef.current?.click(); }}
+                role="button"
+                tabIndex={0}
                 style={{
                   width: "48px",
                   height: "48px",
                   borderRadius: "50%",
-                  background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
+                  background: profileAvatarUrl ? "none" : "linear-gradient(135deg, #c9a84c, #e8c96a)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: "20px",
                   fontWeight: "800",
-                  color: "#0f1729",
+                  color: profileAvatarUrl ? "auto" : "#0f1729",
+                  cursor: "pointer",
+                  position: "relative",
+                  overflow: "hidden",
+                  opacity: uploadingAvatar ? 0.6 : 1,
+                  transition: "opacity 0.2s",
                 }}
               >
-                {profileName.charAt(0).toUpperCase()}
+                {profileAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profileAvatarUrl} alt={profileName} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />
+                ) : (
+                  profileName.charAt(0).toUpperCase()
+                )}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    backgroundColor: "rgba(0,0,0,0.4)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "20px",
+                    opacity: 0,
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = "0"; }}
+                >
+                  📷
+                </div>
               </div>
               <div>
                 <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "13px" }}>Signed in as</p>
