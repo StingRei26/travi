@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { mockTraviis, type Travi } from "@/lib/mockData";
+import type { Travi } from "@/lib/mockData";
 import ExploreClient from "./ExploreClient";
 
 // ── Gradient pool for traviis that have no cover image ──────────────────────
@@ -66,8 +66,7 @@ export default async function ExplorePage() {
       .select(
         `
         id, title, description, emoji, country, country_flag,
-        cover_gradient, cover_image_url, tags, created_at,
-        profiles ( name, handle ),
+        cover_gradient, cover_image_url, tags, created_at, start_date, end_date, user_id,
         stops ( id, name, location, rating, type, emoji, order_index, date, review )
       `
       )
@@ -75,16 +74,24 @@ export default async function ExplorePage() {
       .order("created_at", { ascending: false });
 
     if (!error && data && data.length > 0) {
-      traviis = data.map((row, idx) => dbRowToTravi(row, idx));
+      // Fetch profiles separately for each unique user_id
+      const userIds = [...new Set(data.map(row => row.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name, handle, avatar")
+        .in("id", userIds);
+
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) ?? []);
+
+      traviis = data.map((row, idx) => {
+        const profile = profileMap.get(row.user_id);
+        return dbRowToTravi({ ...row, profiles: profile }, idx);
+      });
     }
-  } catch {
-    // Supabase not configured or network error — fall through to mock data
+  } catch (err) {
+    console.error("Error fetching traviis:", err);
   }
 
-  // If no real data yet, show mock traviis so the page isn't empty
-  if (traviis.length === 0) {
-    traviis = mockTraviis;
-  }
-
+  // Show empty state message if no real traviis exist
   return <ExploreClient traviis={traviis} />;
 }

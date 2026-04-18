@@ -20,6 +20,9 @@ type Stop = {
   emoji: string;
   imageFiles: File[];
   imagePreviews: string[];
+  // For imported stops
+  sourceUserName?: string;
+  sourceTraviTitle?: string;
 };
 type NewStop = {
   name: string;
@@ -29,6 +32,21 @@ type NewStop = {
   emoji: string;
   imageFiles: File[];
   imagePreviews: string[];
+};
+type SavedStop = {
+  id: string;
+  original_stop_id: string;
+  original_travi_id: string;
+  name: string;
+  location: string;
+  rating: number;
+  review: string;
+  type: string;
+  emoji: string;
+  image_url: string | null;
+  image_urls: string[];
+  source_user_name: string;
+  source_travi_title: string;
 };
 
 type NominatimResult = {
@@ -209,20 +227,20 @@ function GlobeCanvas({
       renderer = ren;
       ren.domElement.style.cursor = "grab";
 
-      // Lighting — sunlight from upper-right
-      scene.add(new THREE.AmbientLight(0x112244, 2.2));
-      const sun = new THREE.DirectionalLight(0xfff4e0, 3.0);
+      // Lighting — balanced and natural
+      scene.add(new THREE.AmbientLight(0xffffff, 1.8));
+      const sun = new THREE.DirectionalLight(0xffffff, 4.0);
       sun.position.set(5, 3, 4);
       scene.add(sun);
-      const fill = new THREE.DirectionalLight(0x2244aa, 0.5);
+      const fill = new THREE.DirectionalLight(0xffffff, 1.5);
       fill.position.set(-4, -1, -3);
       scene.add(fill);
 
-      // Earth sphere
+      // Earth sphere — natural colors
       const earthGeo = new THREE.SphereGeometry(1, 72, 72);
       const earthMat = new THREE.MeshPhongMaterial({
-        specular: new THREE.Color(0x224488),
-        shininess: 60,
+        specular: new THREE.Color(0x333333),
+        shininess: 25,
       });
       const earth = new THREE.Mesh(earthGeo, earthMat);
       scene.add(earth);
@@ -1115,6 +1133,10 @@ function BuilderStep({
   onTripMonthChange,
   tripYear,
   onTripYearChange,
+  savedStops,
+  onImportSavedStop,
+  onRemoveSavedStop,
+  savedStopsLoading,
 }: {
   city: City;
   stops: Stop[];
@@ -1135,6 +1157,10 @@ function BuilderStep({
   onTripMonthChange: (v: string) => void;
   tripYear: string;
   onTripYearChange: (v: string) => void;
+  savedStops: SavedStop[];
+  onImportSavedStop: (saved: SavedStop) => void;
+  onRemoveSavedStop: (id: string) => void;
+  savedStopsLoading: boolean;
 }) {
   const [locationSugs, setLocationSugs] = useState<string[]>([]);
   const locDebRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1428,6 +1454,107 @@ function BuilderStep({
           })}
         </div>
       </div>
+
+      {/* ── Saved Stops (from other traviis) ── */}
+      {savedStops.length > 0 && (
+        <div style={{ marginBottom: "28px" }}>
+          <p
+            style={{
+              color: "rgba(255,255,255,0.4)",
+              fontSize: "11px",
+              fontWeight: "700",
+              letterSpacing: "1.8px",
+              textTransform: "uppercase",
+              marginBottom: "14px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span style={{ fontSize: "14px" }}>📌</span>
+            Saved Stops · {savedStops.length}
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              overflowX: "auto",
+              paddingBottom: "8px",
+              marginBottom: "4px",
+            }}
+          >
+            {savedStops.map((saved) => (
+              <div
+                key={saved.id}
+                style={{
+                  minWidth: "220px",
+                  maxWidth: "220px",
+                  borderRadius: "14px",
+                  border: "1px solid rgba(201,168,76,0.25)",
+                  backgroundColor: "rgba(201,168,76,0.06)",
+                  overflow: "hidden",
+                  flexShrink: 0,
+                }}
+              >
+                {saved.image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={saved.image_url}
+                    alt={saved.name}
+                    style={{ width: "100%", height: "80px", objectFit: "cover" }}
+                  />
+                )}
+                <div style={{ padding: "12px" }}>
+                  <p style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff", marginBottom: "4px", lineHeight: 1.3 }}>
+                    {saved.name}
+                  </p>
+                  <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", marginBottom: "8px" }}>
+                    From {saved.source_user_name}&apos;s trip
+                  </p>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      onClick={() => onImportSavedStop(saved)}
+                      style={{
+                        flex: 1,
+                        padding: "7px 10px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
+                        color: "#0f1729",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      + Add
+                    </button>
+                    <button
+                      onClick={() => onRemoveSavedStop(saved.id)}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        background: "none",
+                        color: "rgba(255,255,255,0.5)",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", fontStyle: "italic" }}>
+            💡 These are stops you saved from other travelers&apos; trips
+          </p>
+        </div>
+      )}
 
       {/* ── Add stop form ── */}
       {addingType && (
@@ -1780,6 +1907,11 @@ function BuilderStep({
                           <h4 style={{ color: "#ffffff", fontWeight: "700", fontSize: "16px", lineHeight: 1.2 }}>
                             {stop.name}
                           </h4>
+                          {stop.sourceUserName && (
+                            <p style={{ fontSize: "11px", color: "rgba(201,168,76,0.7)", marginTop: "4px" }}>
+                              📌 From {stop.sourceUserName}&apos;s trip
+                            </p>
+                          )}
                         </div>
                         <button
                           onClick={() => onRemoveStop(stop.id)}
@@ -1919,6 +2051,69 @@ export default function PlanPage() {
   const [searchResults, setSearchResults] = useState<City[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Saved stops from other traviis
+  const [savedStops, setSavedStops] = useState<SavedStop[]>([]);
+  const [savedStopsLoading, setSavedStopsLoading] = useState(false);
+  const savedStopsLoaded = useRef(false);
+
+  // Load saved stops when entering builder step
+  useEffect(() => {
+    if (step === "builder" && !savedStopsLoaded.current) {
+      savedStopsLoaded.current = true;
+      loadSavedStops();
+    }
+  }, [step]);
+
+  const loadSavedStops = async () => {
+    setSavedStopsLoading(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavedStopsLoading(false); return; }
+
+    const { data } = await supabase
+      .from("saved_stops")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    setSavedStops((data as SavedStop[]) ?? []);
+    setSavedStopsLoading(false);
+  };
+
+  const handleImportSavedStop = (saved: SavedStop) => {
+    // Map saved stop type to our StopType
+    const typeMap: Record<string, StopType> = {
+      hotel: "hotel",
+      restaurant: "dining",
+      attraction: "activity",
+      experience: "experience",
+    };
+    const stopType = typeMap[saved.type] ?? "activity";
+    const cfg = STOP_CONFIG[stopType];
+
+    const stop: Stop = {
+      id: `imported-${Date.now()}-${saved.id}`,
+      type: stopType,
+      name: saved.name,
+      location: saved.location ?? "",
+      rating: saved.rating ?? 5,
+      review: saved.review ?? "",
+      emoji: saved.emoji ?? cfg.emoji,
+      imageFiles: [],
+      imagePreviews: saved.image_urls ?? (saved.image_url ? [saved.image_url] : []),
+      sourceUserName: saved.source_user_name,
+      sourceTraviTitle: saved.source_travi_title,
+    };
+
+    setStops((prev) => [...prev, stop]);
+  };
+
+  const handleRemoveSavedStop = async (savedStopId: string) => {
+    const supabase = createClient();
+    await supabase.from("saved_stops").delete().eq("id", savedStopId);
+    setSavedStops((prev) => prev.filter((s) => s.id !== savedStopId));
+  };
 
   const handleQueryChange = (q: string) => {
     setQuery(q);
@@ -2122,6 +2317,10 @@ export default function PlanPage() {
           onTripMonthChange={setTripMonth}
           tripYear={tripYear}
           onTripYearChange={setTripYear}
+          savedStops={savedStops}
+          onImportSavedStop={handleImportSavedStop}
+          onRemoveSavedStop={handleRemoveSavedStop}
+          savedStopsLoading={savedStopsLoading}
         />
       )}
     </main>

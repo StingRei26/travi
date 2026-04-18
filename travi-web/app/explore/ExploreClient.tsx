@@ -172,34 +172,67 @@ export default function ExploreClient({ traviis }: Props) {
 
       {/* ── Results ── */}
       <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "40px 24px" }}>
-        <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "28px" }}>
-          {filtered.length} {filtered.length === 1 ? "Travi" : "Travis"} found
-          {activeTag !== "All" ? ` in ${activeTag}` : ""}
-          {query ? ` matching "${query}"` : ""}
-        </p>
-
-        {filtered.length > 0 ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-              gap: "28px",
-            }}
-          >
-            {filtered.map((travi) => (
-              <TraviCard key={travi.id} travi={travi} />
-            ))}
+        {traviis.length === 0 ? (
+          /* Empty state when no traviis exist at all */
+          <div style={{ textAlign: "center", padding: "80px 24px" }}>
+            <span style={{ fontSize: "64px", display: "block", marginBottom: "20px" }}>✈️</span>
+            <h2 style={{ color: "#1f2937", fontSize: "24px", fontWeight: "700", marginBottom: "12px" }}>
+              No Travis yet
+            </h2>
+            <p style={{ color: "#6b7280", fontSize: "16px", marginBottom: "24px", maxWidth: "400px", margin: "0 auto 24px" }}>
+              Be the first to share your travel journey! Create a Travi and inspire other travelers.
+            </p>
+            <a
+              href="/plan"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "14px 28px",
+                borderRadius: "12px",
+                background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
+                color: "#0f1729",
+                fontWeight: "700",
+                fontSize: "15px",
+                textDecoration: "none",
+                transition: "transform 0.15s, box-shadow 0.15s",
+              }}
+            >
+              Create Your First Travi
+            </a>
           </div>
         ) : (
-          <div style={{ textAlign: "center", padding: "80px 24px" }}>
-            <span style={{ fontSize: "48px" }}>🗺️</span>
-            <p style={{ color: "#6b7280", fontSize: "18px", marginTop: "16px", fontWeight: "500" }}>
-              No Travis found
+          <>
+            <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "28px" }}>
+              {filtered.length} {filtered.length === 1 ? "Travi" : "Travis"} found
+              {activeTag !== "All" ? ` in ${activeTag}` : ""}
+              {query ? ` matching "${query}"` : ""}
             </p>
-            <p style={{ color: "#9ca3af", fontSize: "14px", marginTop: "8px" }}>
-              Try a different search or filter
-            </p>
-          </div>
+
+            {filtered.length > 0 ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                  gap: "28px",
+                }}
+              >
+                {filtered.map((travi) => (
+                  <TraviCard key={travi.id} travi={travi} />
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "80px 24px" }}>
+                <span style={{ fontSize: "48px" }}>🗺️</span>
+                <p style={{ color: "#6b7280", fontSize: "18px", marginTop: "16px", fontWeight: "500" }}>
+                  No Travis found
+                </p>
+                <p style={{ color: "#9ca3af", fontSize: "14px", marginTop: "8px" }}>
+                  Try a different search or filter
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>

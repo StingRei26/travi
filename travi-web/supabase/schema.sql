@@ -236,3 +236,193 @@ $$;
 create or replace trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ── 6. Saved Stops (bookmark stops from other traviis) ────────
+
+create table if not exists public.saved_stops (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid references auth.users(id) on delete cascade not null,
+  original_stop_id uuid references public.stops(id) on delete cascade not null,
+  original_travi_id uuid references public.traviis(id) on delete cascade not null,
+  -- Denormalized data (in case original is deleted, we keep the info)
+  name            text not null,
+  location        text,
+  rating          integer default 5,
+  review          text,
+  type            text,
+  emoji           text,
+  image_url       text,
+  image_urls      text[] default '{}',
+  source_user_name text,
+  source_travi_title text,
+  created_at      timestamptz default now(),
+  unique(user_id, original_stop_id)
+);
+
+alter table public.saved_stops enable row level security;
+
+drop policy if exists "Users can view own saved stops" on public.saved_stops;
+drop policy if exists "Users can insert own saved stops" on public.saved_stops;
+drop policy if exists "Users can delete own saved stops" on public.saved_stops;
+
+create policy "Users can view own saved stops"
+  on public.saved_stops for select using (auth.uid() = user_id);
+
+create policy "Users can insert own saved stops"
+  on public.saved_stops for insert with check (auth.uid() = user_id);
+
+create policy "Users can delete own saved stops"
+  on public.saved_stops for delete using (auth.uid() = user_id);
+
+-- ── 7. Trip Plans (collaborative trip planning) ───────────────
+
+create table if not exists public.trip_plans (
+  id              uuid primary key default gen_random_uuid(),
+  owner_id        uuid references auth.users(id) on delete cascade not null,
+  title           text not null,
+  destination     text,
+  country         text,
+  country_flag    text,
+  planned_date    text,
+  description     text,
+  cover_gradient  text,
+  is_active       boolean default true,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
+alter table public.trip_plans enable row level security;
+
+drop policy if exists "Trip plans viewable by owner and collaborators" on public.trip_plans;
+drop policy if exists "Users can insert own trip plans" on public.trip_plans;
+drop policy if exists "Users can update own trip plans" on public.trip_plans;
+drop policy if exists "Users can delete own trip plans" on public.trip_plans;
+
+create policy "Trip plans viewable by owner and collaborators"
+  on public.trip_plans for select using (
+    owner_id = auth.uid()
+    or exists (
+      select 1 from public.trip_plan_collaborators
+      where trip_plan_id = trip_plans.id and user_id = auth.uid()
+    )
+  );
+
+create policy "Users can insert own trip plans"
+  on public.trip_plans for insert with check (auth.uid() = owner_id);
+
+create policy "Users can update own trip plans"
+  on public.trip_plans for update using (
+    owner_id = auth.uid()
+    or exists (
+      select 1 from public.trip_plan_collaborators
+      where trip_plan_id = trip_plans.id and user_id = auth.uid()
+    )
+  );
+
+create policy "Users can delete own trip plans"
+  on public.trip_plans for delete using (auth.uid() = owner_id);
+
+-- ── 8. Trip Plan Collaborators ────────────────────────────────
+
+create table if not exists public.trip_plan_collaborators (
+  id              uuid primary key default gen_random_uuid(),
+  trip_plan_id    uuid references public.trip_plans(id) on delete cascade not null,
+  user_id         uuid references auth.users(id) on delete cascade,
+  invited_email   text,
+  invite_token    text unique,
+  status          text default 'pending' check (status in ('pending', 'accepted', 'declined')),
+  accepted_at     timestamptz,
+  created_at      timestamptz default now(),
+  unique(trip_plan_id, user_id),
+  unique(trip_plan_id, invited_email)
+);
+
+alter table public.trip_plan_collaborators enable row level security;
+
+drop policy if exists "Collaborators viewable by plan members" on public.trip_plan_collaborators;
+drop policy if exists "Owner can manage collaborators" on public.trip_plan_collaborators;
+drop policy if exists "Users can accept invites" on public.trip_plan_collaborators;
+drop policy if exists "Anyone can view by token" on public.trip_plan_collaborators;
+
+create policy "Collaborators viewable by plan members"
+  on public.trip_plan_collaborators for select using (
+    user_id = auth.uid()
+    or exists (
+      select 1 from public.trip_plans
+      where id = trip_plan_collaborators.trip_plan_id and owner_id = auth.uid()
+    )
+  );
+
+create policy "Owner can manage collaborators"
+  on public.trip_plan_collaborators for all using (
+    exists (
+      select 1 from public.trip_plans
+      where id = trip_plan_collaborators.trip_plan_id and owner_id = auth.uid()
+    )
+  );
+
+create policy "Users can accept invites"
+  on public.trip_plan_collaborators for update using (true)
+  with check (user_id = auth.uid());
+
+create policy "Anyone can view by token"
+  on public.trip_plan_collaborators for select using (invite_token is not null);
+
+-- ── 9. Trip Plan Stops (planned stops for a trip) ─────────────
+
+create table if not exists public.trip_plan_stops (
+  id              uuid primary key default gen_random_uuid(),
+  trip_plan_id    uuid references public.trip_plans(id) on delete cascade not null,
+  added_by        uuid references auth.users(id) on delete set null,
+  name            text not null,
+  location        text,
+  type            text check (type in ('landmark', 'restaurant', 'activity', 'hotel', 'shopping', 'other')),
+  emoji           text,
+  notes           text,
+  image_url       text,
+  image_urls      text[] default '{}',
+  source_stop_id  uuid references public.stops(id) on delete set null,
+  source_travi_id uuid references public.traviis(id) on delete set null,
+  source_user_name text,
+  order_index     integer default 0,
+  created_at      timestamptz default now()
+);
+
+alter table public.trip_plan_stops enable row level security;
+
+drop policy if exists "Plan stops viewable by plan members" on public.trip_plan_stops;
+drop policy if exists "Plan members can manage stops" on public.trip_plan_stops;
+
+create policy "Plan stops viewable by plan members"
+  on public.trip_plan_stops for select using (
+    exists (
+      select 1 from public.trip_plans tp
+      where tp.id = trip_plan_stops.trip_plan_id
+        and (
+          tp.owner_id = auth.uid()
+          or exists (
+            select 1 from public.trip_plan_collaborators
+            where trip_plan_id = tp.id and user_id = auth.uid()
+          )
+        )
+    )
+  );
+
+create policy "Plan members can manage stops"
+  on public.trip_plan_stops for all using (
+    exists (
+      select 1 from public.trip_plans tp
+      where tp.id = trip_plan_stops.trip_plan_id
+        and (
+          tp.owner_id = auth.uid()
+          or exists (
+            select 1 from public.trip_plan_collaborators
+            where trip_plan_id = tp.id and user_id = auth.uid()
+          )
+        )
+    )
+  );
+
+-- Enable realtime for collaborative editing
+alter publication supabase_realtime add table public.trip_plan_stops;
+alter publication supabase_realtime add table public.trip_plan_collaborators;
