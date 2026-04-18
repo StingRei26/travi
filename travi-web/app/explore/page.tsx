@@ -1,138 +1,90 @@
-"use client";
+import { createClient } from "@/lib/supabase/server";
+import { mockTraviis, type Travi } from "@/lib/mockData";
+import ExploreClient from "./ExploreClient";
 
-import { useState } from "react";
-import { Search, SlidersHorizontal, Compass } from "lucide-react";
-import TraviCard from "@/components/ui/TraviCard";
-import { mockTraviis } from "@/lib/mockData";
+// ── Gradient pool for traviis that have no cover image ──────────────────────
+const GRADIENTS = [
+  "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+  "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+  "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+  "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+  "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+  "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)",
+  "linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)",
+  "linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)",
+];
 
-const TAGS = ["All", "Italy", "Japan", "France", "Greece", "Thailand", "Portugal", "Food", "Adventure", "Romance"];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dbRowToTravi(row: any, idx: number): Travi {
+  const profile = row.profiles ?? { name: "Traveler", handle: "@traveler" };
+  const stops = (row.stops ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((s: any) => ({
+      id: s.id,
+      name: s.name ?? "Stop",
+      location: s.location ?? "",
+      date: s.date ?? "",
+      rating: s.rating ?? 5,
+      review: s.review ?? "",
+      type: (s.type ?? "attraction") as Travi["stops"][0]["type"],
+      emoji: s.emoji ?? "📍",
+    }));
 
-export default function ExplorePage() {
-  const [query, setQuery] = useState("");
-  const [activeTag, setActiveTag] = useState("All");
+  return {
+    id: row.id,
+    title: row.title ?? "Untitled Travi",
+    description: row.description ?? "",
+    coverGradient: row.cover_gradient ?? GRADIENTS[idx % GRADIENTS.length],
+    coverImageUrl: row.cover_image_url ?? undefined,
+    emoji: row.emoji ?? "🌍",
+    country: row.country ?? "World",
+    countryFlag: row.country_flag ?? "🌍",
+    startDate: row.start_date ?? "",
+    endDate: row.end_date ?? "",
+    isPublic: true,
+    tags: row.tags ?? [],
+    author: {
+      name: profile.name ?? "Traveler",
+      avatar: (profile.name ?? "T").charAt(0).toUpperCase(),
+      handle: profile.handle ?? "@traveler",
+    },
+    stats: { views: 0, likes: 0, saves: 0, comments: 0 },
+    stops,
+  };
+}
 
-  const filtered = mockTraviis.filter((t) => {
-    const matchQuery =
-      query === "" ||
-      t.title.toLowerCase().includes(query.toLowerCase()) ||
-      t.country.toLowerCase().includes(query.toLowerCase()) ||
-      t.tags.some((tag) => tag.toLowerCase().includes(query.toLowerCase()));
-    const matchTag = activeTag === "All" || t.tags.includes(activeTag);
-    return matchQuery && matchTag;
-  });
+export default async function ExplorePage() {
+  let traviis: Travi[] = [];
 
-  return (
-    <main style={{ backgroundColor: "#f8f7f4", minHeight: "100vh" }}>
-      {/* Header */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #0f1729 0%, #1a2744 100%)",
-          padding: "60px 24px 48px",
-        }}
-      >
-        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-            <Compass size={28} color="#c9a84c" />
-            <h1 style={{ fontSize: "clamp(28px, 4vw, 44px)", fontWeight: "800", color: "#ffffff", letterSpacing: "-1px" }}>
-              Explore Travis
-            </h1>
-          </div>
-          <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "17px", marginBottom: "32px" }}>
-            Discover real trip journals from travelers around the world
-          </p>
+  try {
+    const supabase = await createClient();
 
-          {/* Search bar */}
-          <div style={{ position: "relative", maxWidth: "560px" }}>
-            <Search size={18} color="#9ca3af" style={{ position: "absolute", left: "16px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-            <input
-              type="text"
-              placeholder="Search destinations, countries, or experiences..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "14px 16px 14px 44px",
-                borderRadius: "12px",
-                border: "1px solid rgba(255,255,255,0.15)",
-                backgroundColor: "rgba(255,255,255,0.1)",
-                color: "#ffffff",
-                fontSize: "15px",
-                outline: "none",
-                backdropFilter: "blur(8px)",
-              }}
-            />
-          </div>
-        </div>
-      </div>
+    const { data, error } = await supabase
+      .from("traviis")
+      .select(
+        `
+        id, title, description, emoji, country, country_flag,
+        cover_gradient, cover_image_url, tags, created_at,
+        profiles ( name, handle ),
+        stops ( id, name, location, rating, type, emoji, order_index, date, review )
+      `
+      )
+      .eq("is_public", true)
+      .order("created_at", { ascending: false });
 
-      {/* Filters */}
-      <div style={{ backgroundColor: "#ffffff", borderBottom: "1px solid #e7e5e0", padding: "16px 24px", position: "sticky", top: "64px", zIndex: 40 }}>
-        <div style={{ maxWidth: "1280px", margin: "0 auto", display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px" }}>
-          {TAGS.map((tag) => (
-            <button
-              key={tag}
-              onClick={() => setActiveTag(tag)}
-              style={{
-                padding: "7px 16px",
-                borderRadius: "100px",
-                border: "none",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                fontSize: "13px",
-                fontWeight: "600",
-                backgroundColor: activeTag === tag ? "#0f1729" : "#f0ede8",
-                color: activeTag === tag ? "#c9a84c" : "#6b7280",
-                transition: "all 0.15s",
-              }}
-            >
-              {tag}
-            </button>
-          ))}
-          <button
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "7px 16px",
-              borderRadius: "100px",
-              border: "1px solid #e7e5e0",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              fontSize: "13px",
-              fontWeight: "600",
-              backgroundColor: "#ffffff",
-              color: "#6b7280",
-              marginLeft: "auto",
-            }}
-          >
-            <SlidersHorizontal size={14} />
-            Filters
-          </button>
-        </div>
-      </div>
+    if (!error && data && data.length > 0) {
+      traviis = data.map((row, idx) => dbRowToTravi(row, idx));
+    }
+  } catch {
+    // Supabase not configured or network error — fall through to mock data
+  }
 
-      {/* Results */}
-      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "40px 24px" }}>
-        <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "28px" }}>
-          {filtered.length} {filtered.length === 1 ? "Travi" : "Travis"} found
-          {activeTag !== "All" ? ` in ${activeTag}` : ""}
-          {query ? ` matching "${query}"` : ""}
-        </p>
+  // If no real data yet, show mock traviis so the page isn't empty
+  if (traviis.length === 0) {
+    traviis = mockTraviis;
+  }
 
-        {filtered.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "28px" }}>
-            {filtered.map((travi) => (
-              <TraviCard key={travi.id} travi={travi} />
-            ))}
-          </div>
-        ) : (
-          <div style={{ textAlign: "center", padding: "80px 24px" }}>
-            <span style={{ fontSize: "48px" }}>🗺️</span>
-            <p style={{ color: "#6b7280", fontSize: "18px", marginTop: "16px", fontWeight: "500" }}>No Travis found</p>
-            <p style={{ color: "#9ca3af", fontSize: "14px", marginTop: "8px" }}>Try a different search or filter</p>
-          </div>
-        )}
-      </div>
-    </main>
-  );
+  return <ExploreClient traviis={traviis} />;
 }

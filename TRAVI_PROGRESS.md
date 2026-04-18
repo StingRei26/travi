@@ -81,14 +81,17 @@ Travi is a social travel platform where users:
 ## 🗺️ Feature Roadmap
 
 ### MVP (Phase 1) — Now Building
-- [ ] User auth (sign up / login)
-- [ ] Create a Travi (trip)
-- [ ] Add locations/stops to a Travi
-- [ ] View map of your Travi
-- [ ] Add reviews and comments to locations
-- [ ] Public/private Travi toggle
-- [ ] Browse/discover other Traviis
+- [x] User auth (sign up / login / Google OAuth)
+- [x] Create a Travi (trip) — multi-step builder with Three.js globe
+- [x] Add locations/stops to a Travi (Nominatim search, per-stop photos, rating, review)
+- [x] Add reviews and comments to locations
+- [x] Public/private Travi toggle
+- [x] Browse/discover other Traviis (Explore page, now connected to real DB)
+- [x] Sharing system — invite collaborators via email token
+- [ ] Map view on individual Travi (Mapbox or Leaflet)
 - [ ] Social media share card generation
+- [ ] Follow other travelers
+- [ ] Like and save Traviis
 
 ### Phase 2
 - [ ] Calendar integration (Google Calendar)
@@ -144,11 +147,21 @@ travi/
 - ✅ Deployed to Vercel — https://travi-snowy.vercel.app
 
 ### Up Next
-- [ ] Auth pages (sign up / login)
-- [ ] "Create Travi" flow — multi-step form to plan a new trip
-- [ ] Add stop flow — search location, add review/rating
-- [ ] Map view integration (Mapbox or Leaflet)
-- [ ] Social sharing card generator
+- [ ] Map view on individual Travi (Mapbox or Leaflet embedded in stop timeline)
+- [ ] Like / save / follow system (social engagement layer)
+- [ ] Social share card generator (OG image for Instagram/X)
+- [ ] Travel stats dashboard (countries visited, miles, top stops)
+- [ ] Mobile app (React Native / Expo)
+
+### April 18, 2026
+- ✅ Supabase auth fully integrated (email/password + Google OAuth)
+- ✅ Create Travi flow — Three.js interactive globe, Nominatim location search, per-stop images, cover photo with drag-to-reposition, month/year selectors
+- ✅ My Traviis — real DB queries, avatar upload to Supabase Storage, edit/delete, tabs (Mine / Shared with Me)
+- ✅ Travi Detail — inline stop editing, fullscreen photo lightbox, stop type filter, privacy toggle
+- ✅ Sharing/invite system — invite by email, token-based accept flow at /invite/[token]
+- ✅ Explore page connected to real Supabase public Traviis (falls back to mock data if none yet)
+- ✅ Homepage featured section connected to real Supabase public Traviis
+- ✅ Restored middleware.ts for Supabase session refreshing
 
 ---
 
