@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import * as SplashScreen from "expo-splash-screen";
+import { SplashScreen } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 
+// Prevent auto-hide until we know auth state
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
