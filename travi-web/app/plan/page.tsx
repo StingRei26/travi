@@ -50,6 +50,57 @@ const nominatimToCity = (r: NominatimResult): City => ({
   lon: parseFloat(r.lon),
 });
 
+// ─── Sound helpers (Web Audio API — no external files needed) ──────
+
+function playChime() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      const t = ctx.currentTime + i * 0.14;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.22, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    });
+  } catch { /* browsers that block AudioContext before user gesture */ }
+}
+
+function playWhoosh() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
+    const dur = 0.5;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.8);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 900;
+    bp.Q.value = 0.6;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch { /* silent fail */ }
+}
+
 // ─── Data ──────────────────────────────────────────────────────────
 
 const CITIES: City[] = [
@@ -121,6 +172,7 @@ function projectCity(
 function GlobeCanvas({
   size = 320,
   speedMultiplier = 1,
+  selectedCity = null,
 }: {
   size?: number;
   selectedCity?: City | null;
@@ -129,6 +181,8 @@ function GlobeCanvas({
   const mountRef = useRef<HTMLDivElement>(null);
   const speedRef = useRef(speedMultiplier);
   speedRef.current = speedMultiplier;
+  const selectedCityRef = useRef(selectedCity);
+  selectedCityRef.current = selectedCity;
   const isDraggingRef = useRef(false);
   const lastXRef = useRef(0);
 
@@ -195,32 +249,75 @@ function GlobeCanvas({
         earthMat.needsUpdate = true;
       });
 
-      // Inner atmosphere — visible rim glow from behind
+      // Inner atmosphere — lighter sky-blue rim glow
       const atmos1Geo = new THREE.SphereGeometry(1.025, 48, 48);
       const atmos1Mat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(0x66bbff),
+        color: new THREE.Color(0x99ddff),
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.30,
         side: THREE.BackSide,
         depthWrite: false,
       });
       scene.add(new THREE.Mesh(atmos1Geo, atmos1Mat));
 
-      // Outer soft halo
-      const atmos2Geo = new THREE.SphereGeometry(1.12, 48, 48);
+      // Outer soft halo — brighter and wider
+      const atmos2Geo = new THREE.SphereGeometry(1.15, 48, 48);
       const atmos2Mat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0x44aaff),
+        color: new THREE.Color(0x77ccff),
         transparent: true,
-        opacity: 0.055,
+        opacity: 0.10,
         side: THREE.BackSide,
         depthWrite: false,
       });
       scene.add(new THREE.Mesh(atmos2Geo, atmos2Mat));
 
+      // ── Destination pin (gold dot + glow ring) ─────────────────
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pinMesh: any = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pinGlow: any = null;
+
+      const buildPin = (city: City | null) => {
+        if (pinMesh) { earth.remove(pinMesh); pinMesh = null; }
+        if (pinGlow) { earth.remove(pinGlow); pinGlow = null; }
+        if (!city) return;
+        const latR = (city.lat * Math.PI) / 180;
+        const lonR = (city.lon * Math.PI) / 180;
+        const px = Math.cos(latR) * Math.sin(lonR);
+        const py = Math.sin(latR);
+        const pz = Math.cos(latR) * Math.cos(lonR);
+        // Core gold dot
+        const pinGeo = new THREE.SphereGeometry(0.038, 16, 16);
+        const pinMat = new THREE.MeshBasicMaterial({ color: 0xc9a84c });
+        pinMesh = new THREE.Mesh(pinGeo, pinMat);
+        pinMesh.position.set(px * 1.022, py * 1.022, pz * 1.022);
+        earth.add(pinMesh);
+        // Soft glow ring
+        const glowGeo = new THREE.SphereGeometry(0.08, 16, 16);
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.25 });
+        pinGlow = new THREE.Mesh(glowGeo, glowMat);
+        pinGlow.position.copy(pinMesh.position);
+        earth.add(pinGlow);
+        // Rotate earth so destination faces the viewer
+        earth.rotation.y = -lonR;
+      };
+
+      buildPin(selectedCityRef.current);
+
+      let frame = 0;
       const animate = () => {
         if (!mounted) return;
         animId = requestAnimationFrame(animate);
         earth.rotation.y += 0.0015 * speedRef.current;
+        // Pulse the glow ring
+        if (pinGlow) {
+          frame++;
+          const pulse = 0.18 + 0.18 * Math.sin(frame * 0.06);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (pinGlow.material as any).opacity = pulse;
+          const s = 1 + 0.35 * Math.sin(frame * 0.06);
+          pinGlow.scale.set(s, s, s);
+        }
         ren.render(scene, camera);
       };
       animate();
@@ -315,7 +412,7 @@ function GlobeCanvas({
         borderRadius: "50%",
         overflow: "hidden",
         filter:
-          "drop-shadow(0 0 40px rgba(80,170,255,0.55)) drop-shadow(0 0 90px rgba(50,140,255,0.30))",
+          "drop-shadow(0 0 45px rgba(100,200,255,0.70)) drop-shadow(0 0 100px rgba(80,180,255,0.40))",
       }}
     />
   );
@@ -474,34 +571,35 @@ function GlobeStep({
       {/* Globe */}
       <GlobeCanvas size={320} />
 
-      {/* Location indicator pill */}
-      {(locationLoading || userLocation) && (
+      {/* Location indicator pill — always visible */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "8px 18px",
+        borderRadius: "100px",
+        border: "1px solid rgba(100,220,100,0.35)",
+        backgroundColor: "rgba(100,220,100,0.09)",
+        color: "rgba(200,255,200,0.9)",
+        fontSize: "13px",
+        fontWeight: "500",
+        minWidth: "200px",
+        justifyContent: "center",
+      }}>
         <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "8px 16px",
-          borderRadius: "100px",
-          border: "1px solid rgba(100,220,100,0.3)",
-          backgroundColor: "rgba(100,220,100,0.08)",
-          color: "rgba(200,255,200,0.85)",
-          fontSize: "13px",
-          fontWeight: "500",
-        }}>
-          <div style={{
-            width: "8px",
-            height: "8px",
-            borderRadius: "50%",
-            backgroundColor: "#4ade80",
-            animation: "locationPulse 1.5s ease-in-out infinite",
-          }} />
-          {locationLoading ? (
-            "Detecting your location…"
-          ) : userLocation ? (
-            `📍 You're in ${userLocation.city}, ${userLocation.country}`
-          ) : null}
-        </div>
-      )}
+          width: "8px",
+          height: "8px",
+          borderRadius: "50%",
+          backgroundColor: locationLoading ? "#9ca3af" : "#4ade80",
+          animation: locationLoading ? "none" : "locationPulse 1.5s ease-in-out infinite",
+          flexShrink: 0,
+        }} />
+        {locationLoading
+          ? "📡 Detecting your location…"
+          : userLocation
+            ? `📍 You're in ${userLocation.city}, ${userLocation.country}`
+            : "✈️ Where are you headed?"}
+      </div>
 
       {/* Search */}
       <div style={{ width: "100%", maxWidth: "480px", position: "relative" }}>
@@ -653,6 +751,13 @@ function GlobeStep({
 // ─── Step 2 — Flying animation ─────────────────────────────────────
 
 function FlyingStep({ city }: { city: City }) {
+  // Play a second whoosh + chime burst when this screen mounts
+  useEffect(() => {
+    const t1 = setTimeout(() => playWhoosh(), 200);
+    const t2 = setTimeout(() => playChime(), 900);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
   return (
     <div
       style={{
@@ -1837,6 +1942,8 @@ export default function PlanPage() {
   };
 
   const handleSelectCity = (city: City) => {
+    playWhoosh();
+    setTimeout(playChime, 600); // chime hits after the whoosh settles
     setSelectedCity(city);
     setQuery(city.name + ", " + city.country);
     setStep("flying");
