@@ -140,9 +140,9 @@ export default function TraviCard({ travi }: { travi: Travi }) {
 
           {/* Tags */}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "18px" }}>
-            {travi.tags.slice(0, 3).map((tag) => (
+            {travi.tags.slice(0, 3).map((tag, index) => (
               <span
-                key={tag}
+                key={`${tag}-${index}`}
                 style={{
                   padding: "3px 10px",
                   borderRadius: "100px",

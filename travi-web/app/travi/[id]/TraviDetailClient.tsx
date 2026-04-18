@@ -91,6 +91,10 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
   const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null);
   const [stopFilter, setStopFilter] = useState<string>("all");
 
+  // Save stop to collection (for non-owners)
+  const [savingStopId, setSavingStopId] = useState<string | null>(null);
+  const [savedStopIds, setSavedStopIds] = useState<Set<string>>(new Set());
+
   const travi = { ...initialTravi, stops };
 
   // ── Helpers ──────────────────────────────────────────────────────
@@ -194,6 +198,56 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
     const { error } = await supabase.from("traviis").update({ is_public: !isPublic }).eq("id", id);
     if (!error) setIsPublic((v) => !v);
     setTogglingPrivacy(false);
+  };
+
+  // ── Save stop to collection ───────────────────────────────────────
+
+  const saveStopToCollection = async (stop: DisplayStop) => {
+    setSavingStopId(stop.id);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      // Redirect to auth if not logged in
+      window.location.href = "/auth";
+      return;
+    }
+
+    const { error } = await supabase.from("saved_stops").insert({
+      user_id: user.id,
+      original_stop_id: stop.id,
+      original_travi_id: id,
+      name: stop.name,
+      location: stop.location,
+      rating: stop.rating,
+      review: stop.review,
+      type: stop.type,
+      emoji: stop.emoji,
+      image_url: stop.imageUrls[0] ?? null,
+      image_urls: stop.imageUrls,
+      source_user_name: travi.author.name,
+      source_travi_title: travi.title,
+    });
+
+    if (!error) {
+      setSavedStopIds((prev) => new Set([...prev, stop.id]));
+    }
+    setSavingStopId(null);
+  };
+
+  const unsaveStop = async (stopId: string) => {
+    setSavingStopId(stopId);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingStopId(null); return; }
+
+    await supabase.from("saved_stops").delete().match({ user_id: user.id, original_stop_id: stopId });
+    setSavedStopIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(stopId);
+      return newSet;
+    });
+    setSavingStopId(null);
   };
 
   // ── Share panel ───────────────────────────────────────────────────
@@ -491,13 +545,37 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
                           )}
 
                           {/* Action row */}
-                          <div style={{ display: "flex", gap: "16px", marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #f0ede8" }}>
+                          <div style={{ display: "flex", gap: "16px", marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #f0ede8", flexWrap: "wrap" }}>
                             <button style={{ display: "flex", alignItems: "center", gap: "5px", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: "13px", fontWeight: "500", padding: 0 }}>
                               <Heart size={14} /> Helpful
                             </button>
                             <button style={{ display: "flex", alignItems: "center", gap: "5px", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: "13px", fontWeight: "500", padding: 0 }}>
                               <MessageCircle size={14} /> Comment
                             </button>
+                            {!isOwner && (
+                              <button
+                                onClick={() => savedStopIds.has(stop.id) ? unsaveStop(stop.id) : saveStopToCollection(stop)}
+                                disabled={savingStopId === stop.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "5px",
+                                  background: savedStopIds.has(stop.id) ? "rgba(201,168,76,0.1)" : "none",
+                                  border: savedStopIds.has(stop.id) ? "1px solid rgba(201,168,76,0.3)" : "none",
+                                  borderRadius: "6px",
+                                  padding: savedStopIds.has(stop.id) ? "4px 10px" : "0",
+                                  cursor: savingStopId === stop.id ? "not-allowed" : "pointer",
+                                  color: savedStopIds.has(stop.id) ? "#c9a84c" : "#9ca3af",
+                                  fontSize: "13px",
+                                  fontWeight: savedStopIds.has(stop.id) ? "600" : "500",
+                                  fontFamily: "inherit",
+                                  opacity: savingStopId === stop.id ? 0.6 : 1,
+                                }}
+                              >
+                                <Bookmark size={14} fill={savedStopIds.has(stop.id) ? "#c9a84c" : "none"} />
+                                {savingStopId === stop.id ? "Saving…" : savedStopIds.has(stop.id) ? "Saved" : "Save to My Trip"}
+                              </button>
+                            )}
                             <button style={{ display: "flex", alignItems: "center", gap: "5px", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: "13px", fontWeight: "500", padding: 0, marginLeft: "auto" }}>
                               <ExternalLink size={14} /> Book
                             </button>
@@ -518,8 +596,8 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
               <div style={{ backgroundColor: "#ffffff", borderRadius: "16px", border: "1px solid #e7e5e0", padding: "20px 24px", marginBottom: "20px" }}>
                 <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#0f1729", marginBottom: "14px" }}>Tags</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  {travi.tags.map((tag) => (
-                    <span key={tag} style={{ padding: "5px 12px", borderRadius: "100px", backgroundColor: "rgba(201,168,76,0.1)", color: "#b8962a", fontSize: "13px", fontWeight: "600" }}>
+                  {travi.tags.map((tag, index) => (
+                    <span key={`${tag}-${index}`} style={{ padding: "5px 12px", borderRadius: "100px", backgroundColor: "rgba(201,168,76,0.1)", color: "#b8962a", fontSize: "13px", fontWeight: "600" }}>
                       #{tag}
                     </span>
                   ))}

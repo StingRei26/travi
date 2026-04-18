@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Map, Menu, X, Compass, BookOpen } from "lucide-react";
+import { Map, Menu, X, Compass, BookOpen, Plane } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -96,6 +96,7 @@ export default function Navbar() {
         <div style={{ display: "flex", alignItems: "center", gap: "32px" }} className="hidden-mobile">
           <NavLink href="/explore" icon={<Compass size={16} />} label="Explore" />
           <NavLink href="/my-traviis" icon={<BookOpen size={16} />} label="My Travis" />
+          <NavLink href="/plan-trip" icon={<Plane size={16} />} label="Plan Trip" />
           <NavLink href="/plan" icon={<Map size={16} />} label="New Travi" />
         </div>
 
@@ -211,6 +212,7 @@ export default function Navbar() {
         >
           <MobileNavLink href="/explore" label="Explore" onClick={() => setMenuOpen(false)} />
           <MobileNavLink href="/my-traviis" label="My Travis" onClick={() => setMenuOpen(false)} />
+          <MobileNavLink href="/plan-trip" label="Plan Trip" onClick={() => setMenuOpen(false)} />
           <MobileNavLink href="/plan" label="New Travi" onClick={() => setMenuOpen(false)} />
 
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px" }}>

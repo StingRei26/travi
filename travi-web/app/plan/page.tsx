@@ -20,6 +20,9 @@ type Stop = {
   emoji: string;
   imageFiles: File[];
   imagePreviews: string[];
+  // For imported stops
+  sourceUserName?: string;
+  sourceTraviTitle?: string;
 };
 type NewStop = {
   name: string;
@@ -29,6 +32,21 @@ type NewStop = {
   emoji: string;
   imageFiles: File[];
   imagePreviews: string[];
+};
+type SavedStop = {
+  id: string;
+  original_stop_id: string;
+  original_travi_id: string;
+  name: string;
+  location: string;
+  rating: number;
+  review: string;
+  type: string;
+  emoji: string;
+  image_url: string | null;
+  image_urls: string[];
+  source_user_name: string;
+  source_travi_title: string;
 };
 
 type NominatimResult = {
@@ -49,6 +67,57 @@ const nominatimToCity = (r: NominatimResult): City => ({
   lat: parseFloat(r.lat),
   lon: parseFloat(r.lon),
 });
+
+// ─── Sound helpers (Web Audio API — no external files needed) ──────
+
+function playChime() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      const t = ctx.currentTime + i * 0.14;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.22, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    });
+  } catch { /* browsers that block AudioContext before user gesture */ }
+}
+
+function playWhoosh() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
+    const dur = 0.5;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 1.8);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 900;
+    bp.Q.value = 0.6;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch { /* silent fail */ }
+}
 
 // ─── Data ──────────────────────────────────────────────────────────
 
@@ -121,6 +190,7 @@ function projectCity(
 function GlobeCanvas({
   size = 320,
   speedMultiplier = 1,
+  selectedCity = null,
 }: {
   size?: number;
   selectedCity?: City | null;
@@ -129,6 +199,8 @@ function GlobeCanvas({
   const mountRef = useRef<HTMLDivElement>(null);
   const speedRef = useRef(speedMultiplier);
   speedRef.current = speedMultiplier;
+  const selectedCityRef = useRef(selectedCity);
+  selectedCityRef.current = selectedCity;
   const isDraggingRef = useRef(false);
   const lastXRef = useRef(0);
 
@@ -155,20 +227,20 @@ function GlobeCanvas({
       renderer = ren;
       ren.domElement.style.cursor = "grab";
 
-      // Lighting — sunlight from upper-right
-      scene.add(new THREE.AmbientLight(0x112244, 2.2));
-      const sun = new THREE.DirectionalLight(0xfff4e0, 3.0);
+      // Lighting — balanced and natural
+      scene.add(new THREE.AmbientLight(0xffffff, 1.8));
+      const sun = new THREE.DirectionalLight(0xffffff, 4.0);
       sun.position.set(5, 3, 4);
       scene.add(sun);
-      const fill = new THREE.DirectionalLight(0x2244aa, 0.5);
+      const fill = new THREE.DirectionalLight(0xffffff, 1.5);
       fill.position.set(-4, -1, -3);
       scene.add(fill);
 
-      // Earth sphere
+      // Earth sphere — natural colors
       const earthGeo = new THREE.SphereGeometry(1, 72, 72);
       const earthMat = new THREE.MeshPhongMaterial({
-        specular: new THREE.Color(0x224488),
-        shininess: 60,
+        specular: new THREE.Color(0x333333),
+        shininess: 25,
       });
       const earth = new THREE.Mesh(earthGeo, earthMat);
       scene.add(earth);
@@ -195,32 +267,75 @@ function GlobeCanvas({
         earthMat.needsUpdate = true;
       });
 
-      // Inner atmosphere — visible rim glow from behind
+      // Inner atmosphere — lighter sky-blue rim glow
       const atmos1Geo = new THREE.SphereGeometry(1.025, 48, 48);
       const atmos1Mat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(0x66bbff),
+        color: new THREE.Color(0x99ddff),
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.30,
         side: THREE.BackSide,
         depthWrite: false,
       });
       scene.add(new THREE.Mesh(atmos1Geo, atmos1Mat));
 
-      // Outer soft halo
-      const atmos2Geo = new THREE.SphereGeometry(1.12, 48, 48);
+      // Outer soft halo — brighter and wider
+      const atmos2Geo = new THREE.SphereGeometry(1.15, 48, 48);
       const atmos2Mat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0x44aaff),
+        color: new THREE.Color(0x77ccff),
         transparent: true,
-        opacity: 0.055,
+        opacity: 0.10,
         side: THREE.BackSide,
         depthWrite: false,
       });
       scene.add(new THREE.Mesh(atmos2Geo, atmos2Mat));
 
+      // ── Destination pin (gold dot + glow ring) ─────────────────
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pinMesh: any = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pinGlow: any = null;
+
+      const buildPin = (city: City | null) => {
+        if (pinMesh) { earth.remove(pinMesh); pinMesh = null; }
+        if (pinGlow) { earth.remove(pinGlow); pinGlow = null; }
+        if (!city) return;
+        const latR = (city.lat * Math.PI) / 180;
+        const lonR = (city.lon * Math.PI) / 180;
+        const px = Math.cos(latR) * Math.sin(lonR);
+        const py = Math.sin(latR);
+        const pz = Math.cos(latR) * Math.cos(lonR);
+        // Core gold dot
+        const pinGeo = new THREE.SphereGeometry(0.038, 16, 16);
+        const pinMat = new THREE.MeshBasicMaterial({ color: 0xc9a84c });
+        pinMesh = new THREE.Mesh(pinGeo, pinMat);
+        pinMesh.position.set(px * 1.022, py * 1.022, pz * 1.022);
+        earth.add(pinMesh);
+        // Soft glow ring
+        const glowGeo = new THREE.SphereGeometry(0.08, 16, 16);
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.25 });
+        pinGlow = new THREE.Mesh(glowGeo, glowMat);
+        pinGlow.position.copy(pinMesh.position);
+        earth.add(pinGlow);
+        // Rotate earth so destination faces the viewer
+        earth.rotation.y = -lonR;
+      };
+
+      buildPin(selectedCityRef.current);
+
+      let frame = 0;
       const animate = () => {
         if (!mounted) return;
         animId = requestAnimationFrame(animate);
         earth.rotation.y += 0.0015 * speedRef.current;
+        // Pulse the glow ring
+        if (pinGlow) {
+          frame++;
+          const pulse = 0.18 + 0.18 * Math.sin(frame * 0.06);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (pinGlow.material as any).opacity = pulse;
+          const s = 1 + 0.35 * Math.sin(frame * 0.06);
+          pinGlow.scale.set(s, s, s);
+        }
         ren.render(scene, camera);
       };
       animate();
@@ -315,7 +430,7 @@ function GlobeCanvas({
         borderRadius: "50%",
         overflow: "hidden",
         filter:
-          "drop-shadow(0 0 40px rgba(80,170,255,0.55)) drop-shadow(0 0 90px rgba(50,140,255,0.30))",
+          "drop-shadow(0 0 45px rgba(100,200,255,0.70)) drop-shadow(0 0 100px rgba(80,180,255,0.40))",
       }}
     />
   );
@@ -474,34 +589,35 @@ function GlobeStep({
       {/* Globe */}
       <GlobeCanvas size={320} />
 
-      {/* Location indicator pill */}
-      {(locationLoading || userLocation) && (
+      {/* Location indicator pill — always visible */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "8px 18px",
+        borderRadius: "100px",
+        border: "1px solid rgba(100,220,100,0.35)",
+        backgroundColor: "rgba(100,220,100,0.09)",
+        color: "rgba(200,255,200,0.9)",
+        fontSize: "13px",
+        fontWeight: "500",
+        minWidth: "200px",
+        justifyContent: "center",
+      }}>
         <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "8px 16px",
-          borderRadius: "100px",
-          border: "1px solid rgba(100,220,100,0.3)",
-          backgroundColor: "rgba(100,220,100,0.08)",
-          color: "rgba(200,255,200,0.85)",
-          fontSize: "13px",
-          fontWeight: "500",
-        }}>
-          <div style={{
-            width: "8px",
-            height: "8px",
-            borderRadius: "50%",
-            backgroundColor: "#4ade80",
-            animation: "locationPulse 1.5s ease-in-out infinite",
-          }} />
-          {locationLoading ? (
-            "Detecting your location…"
-          ) : userLocation ? (
-            `📍 You're in ${userLocation.city}, ${userLocation.country}`
-          ) : null}
-        </div>
-      )}
+          width: "8px",
+          height: "8px",
+          borderRadius: "50%",
+          backgroundColor: locationLoading ? "#9ca3af" : "#4ade80",
+          animation: locationLoading ? "none" : "locationPulse 1.5s ease-in-out infinite",
+          flexShrink: 0,
+        }} />
+        {locationLoading
+          ? "📡 Detecting your location…"
+          : userLocation
+            ? `📍 You're in ${userLocation.city}, ${userLocation.country}`
+            : "✈️ Where are you headed?"}
+      </div>
 
       {/* Search */}
       <div style={{ width: "100%", maxWidth: "480px", position: "relative" }}>
@@ -653,6 +769,13 @@ function GlobeStep({
 // ─── Step 2 — Flying animation ─────────────────────────────────────
 
 function FlyingStep({ city }: { city: City }) {
+  // Play a second whoosh + chime burst when this screen mounts
+  useEffect(() => {
+    const t1 = setTimeout(() => playWhoosh(), 200);
+    const t2 = setTimeout(() => playChime(), 900);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
   return (
     <div
       style={{
@@ -1010,6 +1133,10 @@ function BuilderStep({
   onTripMonthChange,
   tripYear,
   onTripYearChange,
+  savedStops,
+  onImportSavedStop,
+  onRemoveSavedStop,
+  savedStopsLoading,
 }: {
   city: City;
   stops: Stop[];
@@ -1030,6 +1157,10 @@ function BuilderStep({
   onTripMonthChange: (v: string) => void;
   tripYear: string;
   onTripYearChange: (v: string) => void;
+  savedStops: SavedStop[];
+  onImportSavedStop: (saved: SavedStop) => void;
+  onRemoveSavedStop: (id: string) => void;
+  savedStopsLoading: boolean;
 }) {
   const [locationSugs, setLocationSugs] = useState<string[]>([]);
   const locDebRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1323,6 +1454,107 @@ function BuilderStep({
           })}
         </div>
       </div>
+
+      {/* ── Saved Stops (from other traviis) ── */}
+      {savedStops.length > 0 && (
+        <div style={{ marginBottom: "28px" }}>
+          <p
+            style={{
+              color: "rgba(255,255,255,0.4)",
+              fontSize: "11px",
+              fontWeight: "700",
+              letterSpacing: "1.8px",
+              textTransform: "uppercase",
+              marginBottom: "14px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span style={{ fontSize: "14px" }}>📌</span>
+            Saved Stops · {savedStops.length}
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              overflowX: "auto",
+              paddingBottom: "8px",
+              marginBottom: "4px",
+            }}
+          >
+            {savedStops.map((saved) => (
+              <div
+                key={saved.id}
+                style={{
+                  minWidth: "220px",
+                  maxWidth: "220px",
+                  borderRadius: "14px",
+                  border: "1px solid rgba(201,168,76,0.25)",
+                  backgroundColor: "rgba(201,168,76,0.06)",
+                  overflow: "hidden",
+                  flexShrink: 0,
+                }}
+              >
+                {saved.image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={saved.image_url}
+                    alt={saved.name}
+                    style={{ width: "100%", height: "80px", objectFit: "cover" }}
+                  />
+                )}
+                <div style={{ padding: "12px" }}>
+                  <p style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff", marginBottom: "4px", lineHeight: 1.3 }}>
+                    {saved.name}
+                  </p>
+                  <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", marginBottom: "8px" }}>
+                    From {saved.source_user_name}&apos;s trip
+                  </p>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      onClick={() => onImportSavedStop(saved)}
+                      style={{
+                        flex: 1,
+                        padding: "7px 10px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "linear-gradient(135deg, #c9a84c, #e8c96a)",
+                        color: "#0f1729",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      + Add
+                    </button>
+                    <button
+                      onClick={() => onRemoveSavedStop(saved.id)}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        background: "none",
+                        color: "rgba(255,255,255,0.5)",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", fontStyle: "italic" }}>
+            💡 These are stops you saved from other travelers&apos; trips
+          </p>
+        </div>
+      )}
 
       {/* ── Add stop form ── */}
       {addingType && (
@@ -1675,6 +1907,11 @@ function BuilderStep({
                           <h4 style={{ color: "#ffffff", fontWeight: "700", fontSize: "16px", lineHeight: 1.2 }}>
                             {stop.name}
                           </h4>
+                          {stop.sourceUserName && (
+                            <p style={{ fontSize: "11px", color: "rgba(201,168,76,0.7)", marginTop: "4px" }}>
+                              📌 From {stop.sourceUserName}&apos;s trip
+                            </p>
+                          )}
                         </div>
                         <button
                           onClick={() => onRemoveStop(stop.id)}
@@ -1815,6 +2052,69 @@ export default function PlanPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Saved stops from other traviis
+  const [savedStops, setSavedStops] = useState<SavedStop[]>([]);
+  const [savedStopsLoading, setSavedStopsLoading] = useState(false);
+  const savedStopsLoaded = useRef(false);
+
+  // Load saved stops when entering builder step
+  useEffect(() => {
+    if (step === "builder" && !savedStopsLoaded.current) {
+      savedStopsLoaded.current = true;
+      loadSavedStops();
+    }
+  }, [step]);
+
+  const loadSavedStops = async () => {
+    setSavedStopsLoading(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavedStopsLoading(false); return; }
+
+    const { data } = await supabase
+      .from("saved_stops")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    setSavedStops((data as SavedStop[]) ?? []);
+    setSavedStopsLoading(false);
+  };
+
+  const handleImportSavedStop = (saved: SavedStop) => {
+    // Map saved stop type to our StopType
+    const typeMap: Record<string, StopType> = {
+      hotel: "hotel",
+      restaurant: "dining",
+      attraction: "activity",
+      experience: "experience",
+    };
+    const stopType = typeMap[saved.type] ?? "activity";
+    const cfg = STOP_CONFIG[stopType];
+
+    const stop: Stop = {
+      id: `imported-${Date.now()}-${saved.id}`,
+      type: stopType,
+      name: saved.name,
+      location: saved.location ?? "",
+      rating: saved.rating ?? 5,
+      review: saved.review ?? "",
+      emoji: saved.emoji ?? cfg.emoji,
+      imageFiles: [],
+      imagePreviews: saved.image_urls ?? (saved.image_url ? [saved.image_url] : []),
+      sourceUserName: saved.source_user_name,
+      sourceTraviTitle: saved.source_travi_title,
+    };
+
+    setStops((prev) => [...prev, stop]);
+  };
+
+  const handleRemoveSavedStop = async (savedStopId: string) => {
+    const supabase = createClient();
+    await supabase.from("saved_stops").delete().eq("id", savedStopId);
+    setSavedStops((prev) => prev.filter((s) => s.id !== savedStopId));
+  };
+
   const handleQueryChange = (q: string) => {
     setQuery(q);
     if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
@@ -1837,6 +2137,8 @@ export default function PlanPage() {
   };
 
   const handleSelectCity = (city: City) => {
+    playWhoosh();
+    setTimeout(playChime, 600); // chime hits after the whoosh settles
     setSelectedCity(city);
     setQuery(city.name + ", " + city.country);
     setStep("flying");
@@ -2015,6 +2317,10 @@ export default function PlanPage() {
           onTripMonthChange={setTripMonth}
           tripYear={tripYear}
           onTripYearChange={setTripYear}
+          savedStops={savedStops}
+          onImportSavedStop={handleImportSavedStop}
+          onRemoveSavedStop={handleRemoveSavedStop}
+          savedStopsLoading={savedStopsLoading}
         />
       )}
     </main>
