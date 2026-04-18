@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Travi",
+    "slug": "travi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f1729"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.travi.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Travi uses your location to show where you are on the globe when planning a new trip.",
+        "NSPhotoLibraryUsageDescription": "Travi needs access to your photos to add cover images and stop photos to your Travis.",
+        "NSCameraUsageDescription": "Travi uses your camera to take photos for your Travis."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f1729"
+      },
+      "package": "com.travi.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Travi needs access to your photos to add images to your Travis.",
+          "cameraPermission": "Travi uses your camera to capture travel memories."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Travi uses your location to show where you are on the globe."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "scheme": "travi"
+  }
+}
