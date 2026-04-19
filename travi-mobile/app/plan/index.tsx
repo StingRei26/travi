@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   Alert, Image, ActivityIndicator, KeyboardAvoidingView, Platform,
+  FlatList, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,6 +26,21 @@ interface SearchResult {
   displayName: string;
 }
 
+interface NominatimResult {
+  display_name: string;
+  name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    city?: string;
+    town?: string;
+    county?: string;
+    country?: string;
+    road?: string;
+    house_number?: string;
+  };
+}
+
 interface StopDraft {
   id: string;
   type: StopType;
@@ -33,6 +49,7 @@ interface StopDraft {
   rating: number;
   review: string;
   emoji: string;
+  photos: string[];  // local URIs before upload
 }
 
 const STOP_TYPES: { type: StopType; emoji: string; label: string; color: string }[] = [
@@ -60,12 +77,36 @@ const FLAG_MAP: Record<string, string> = {
   "Philippines": "🇵🇭", "Greece": "🇬🇷", "Portugal": "🇵🇹", "Brazil": "🇧🇷",
 };
 
+const EMPTY_STOP: Omit<StopDraft, "id"> = {
+  type: "activity", name: "", location: "", rating: 5, review: "", emoji: "📍", photos: [],
+};
+
+// ── Upload helper ──────────────────────────────────────────────────
+
+async function uploadImage(uri: string, path: string): Promise<string | null> {
+  try {
+    const ext = uri.split(".").pop()?.toLowerCase() ?? "jpg";
+    const filePath = `${path}.${ext}`;
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const arrayBuffer = await new Response(blob).arrayBuffer();
+    const { error } = await supabase.storage
+      .from("travi-images")
+      .upload(filePath, arrayBuffer, { contentType: `image/${ext}`, upsert: true });
+    if (error) return null;
+    const { data: { publicUrl } } = supabase.storage.from("travi-images").getPublicUrl(filePath);
+    return publicUrl;
+  } catch {
+    return null;
+  }
+}
+
 // ── Component ──────────────────────────────────────────────────────
 
 export default function PlanScreen() {
   const [step, setStep] = useState<Step>("destination");
 
-  // Destination
+  // Destination search
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -86,12 +127,25 @@ export default function PlanScreen() {
   // Stops
   const [stops, setStops] = useState<StopDraft[]>([]);
   const [addingType, setAddingType] = useState<StopType | null>(null);
-  const [newStop, setNewStop] = useState<Omit<StopDraft, "id">>({
-    type: "activity", name: "", location: "", rating: 5, review: "", emoji: "📍",
-  });
+  const [newStop, setNewStop] = useState<Omit<StopDraft, "id">>(EMPTY_STOP);
+
+  // Stop location autocomplete
+  const [stopLocQuery, setStopLocQuery] = useState("");
+  const [stopLocResults, setStopLocResults] = useState<{ label: string; displayName: string }[]>([]);
+  const [stopLocSearching, setStopLocSearching] = useState(false);
+  const stopLocTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stop photos (local URIs during creation)
+  const [newStopPhotos, setNewStopPhotos] = useState<string[]>([]);
+
+  // Lightbox
+  const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
+  const [lightboxIdx, setLightboxIdx] = useState(0);
 
   // Publish
   const [publishing, setPublishing] = useState(false);
+
+  // ── Effects ────────────────────────────────────────────────────
 
   // Detect user location
   useEffect(() => {
@@ -99,12 +153,14 @@ export default function PlanScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({});
-      const geo = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      const geo = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude, longitude: loc.coords.longitude,
+      });
       if (geo[0]) setUserCity(`${geo[0].city ?? geo[0].subregion ?? ""}, ${geo[0].country ?? ""}`);
     })();
   }, []);
 
-  // Search Nominatim
+  // Destination search (Nominatim)
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
     const timer = setTimeout(async () => {
@@ -114,8 +170,8 @@ export default function PlanScreen() {
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`,
           { headers: { "User-Agent": "TraviApp/1.0" } }
         );
-        const data = await res.json();
-        setResults(data.map((r: any) => ({
+        const data: NominatimResult[] = await res.json();
+        setResults(data.map(r => ({
           name: r.address?.city ?? r.address?.town ?? r.address?.county ?? r.name.split(",")[0],
           country: r.address?.country ?? "",
           flag: FLAG_MAP[r.address?.country ?? ""] ?? "🌍",
@@ -128,6 +184,38 @@ export default function PlanScreen() {
     }, 400);
     return () => clearTimeout(timer);
   }, [query]);
+
+  // Stop location autocomplete (Nominatim)
+  useEffect(() => {
+    if (stopLocTimerRef.current) clearTimeout(stopLocTimerRef.current);
+    if (!stopLocQuery.trim() || stopLocQuery === newStop.location) {
+      setStopLocResults([]);
+      return;
+    }
+    stopLocTimerRef.current = setTimeout(async () => {
+      setStopLocSearching(true);
+      try {
+        const q = destination
+          ? `${stopLocQuery}, ${destination.name}, ${destination.country}`
+          : stopLocQuery;
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1&accept-language=en`,
+          { headers: { "User-Agent": "TraviApp/1.0" } }
+        );
+        const data: NominatimResult[] = await res.json();
+        setStopLocResults(data.map(r => {
+          const parts = r.display_name.split(",").slice(0, 3).map(s => s.trim());
+          return { label: parts.join(", "), displayName: r.display_name };
+        }));
+      } catch { setStopLocResults([]); }
+      setStopLocSearching(false);
+    }, 400);
+    return () => {
+      if (stopLocTimerRef.current) clearTimeout(stopLocTimerRef.current);
+    };
+  }, [stopLocQuery]);
+
+  // ── Handlers ───────────────────────────────────────────────────
 
   const selectDestination = (r: SearchResult) => {
     setDestination(r);
@@ -145,12 +233,45 @@ export default function PlanScreen() {
     if (!result.canceled) setCoverUri(result.assets[0].uri);
   };
 
+  const pickStopPhoto = async () => {
+    if (newStopPhotos.length >= 3) {
+      Alert.alert("Max 3 photos", "You can add up to 3 photos per stop.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, aspect: [4, 3], quality: 0.8,
+    });
+    if (!result.canceled) {
+      setNewStopPhotos(prev => [...prev, result.assets[0].uri]);
+    }
+  };
+
+  const removeStopPhoto = (idx: number) => {
+    setNewStopPhotos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const selectStopLocation = (label: string) => {
+    setNewStop(p => ({ ...p, location: label }));
+    setStopLocQuery(label);
+    setStopLocResults([]);
+  };
+
   const addStop = () => {
     if (!newStop.name.trim()) return Alert.alert("Missing name", "Give this stop a name.");
     const cfg = STOP_TYPES.find(s => s.type === (addingType ?? "activity"))!;
-    setStops(prev => [...prev, { ...newStop, id: Date.now().toString(), type: addingType ?? "activity", emoji: cfg.emoji }]);
+    setStops(prev => [...prev, {
+      ...newStop,
+      id: Date.now().toString(),
+      type: addingType ?? "activity",
+      emoji: cfg.emoji,
+      photos: newStopPhotos,
+    }]);
     setAddingType(null);
-    setNewStop({ type: "activity", name: "", location: "", rating: 5, review: "", emoji: "📍" });
+    setNewStop(EMPTY_STOP);
+    setNewStopPhotos([]);
+    setStopLocQuery("");
+    setStopLocResults([]);
   };
 
   const removeStop = (id: string) => setStops(prev => prev.filter(s => s.id !== id));
@@ -163,25 +284,18 @@ export default function PlanScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setPublishing(false); return; }
 
-    // Upload cover image if selected
+    // Upload cover image
     let coverImageUrl: string | null = null;
     if (coverUri) {
       const ext = coverUri.split(".").pop() ?? "jpg";
-      const fileName = `${user.id}/covers/${Date.now()}.${ext}`;
-      const response = await fetch(coverUri);
-      const blob = await response.blob();
-      const arrayBuffer = await new Response(blob).arrayBuffer();
-      const { error: uploadErr } = await supabase.storage
-        .from("travi-images")
-        .upload(fileName, arrayBuffer, { contentType: `image/${ext}` });
-      if (!uploadErr) {
-        const { data: { publicUrl } } = supabase.storage.from("travi-images").getPublicUrl(fileName);
-        coverImageUrl = publicUrl;
-      }
+      coverImageUrl = await uploadImage(coverUri, `${user.id}/covers/${Date.now()}`);
     }
 
     // Insert travi
-    const startDate = month && year ? `${year}-${String(MONTHS.indexOf(month) + 1).padStart(2, "0")}-01` : null;
+    const startDate = month && year
+      ? `${year}-${String(MONTHS.indexOf(month) + 1).padStart(2, "0")}-01`
+      : null;
+
     const { data: travi, error: traviErr } = await supabase
       .from("traviis")
       .insert({
@@ -205,9 +319,21 @@ export default function PlanScreen() {
       return Alert.alert("Error", "Failed to save your Travi. Please try again.");
     }
 
-    // Insert stops
-    await supabase.from("stops").insert(
-      stops.map((s, i) => ({
+    // Insert stops (with photo uploads)
+    for (let i = 0; i < stops.length; i++) {
+      const s = stops[i];
+
+      // Upload stop photos
+      const uploadedUrls: string[] = [];
+      for (let j = 0; j < s.photos.length; j++) {
+        const url = await uploadImage(
+          s.photos[j],
+          `${user.id}/stops/${travi.id}/${Date.now()}_${j}`
+        );
+        if (url) uploadedUrls.push(url);
+      }
+
+      await supabase.from("stops").insert({
         travi_id: travi.id,
         name: s.name,
         location: s.location || `${destination.name}, ${destination.country}`,
@@ -216,8 +342,9 @@ export default function PlanScreen() {
         type: s.type === "dining" ? "restaurant" : s.type,
         emoji: s.emoji,
         order_index: i,
-      }))
-    );
+        image_urls: uploadedUrls.length > 0 ? uploadedUrls : null,
+      });
+    }
 
     setPublishing(false);
     Alert.alert("Travi saved! ✈️", `Your ${destination.name} Travi is ready.`, [
@@ -241,18 +368,29 @@ export default function PlanScreen() {
 
       {/* Step indicator */}
       <View style={styles.stepRow}>
-        {(["destination", "cover", "stops", "review"] as Step[]).map((s, i) => (
-          <View key={s} style={styles.stepItem}>
-            <View style={[styles.stepDot, step === s && styles.stepDotActive, i < ["destination","cover","stops","review"].indexOf(step) && styles.stepDotDone]} />
-            <Text style={[styles.stepLabel, step === s && styles.stepLabelActive]}>
-              {["Destination", "Cover", "Stops", "Review"][i]}
-            </Text>
-          </View>
-        ))}
+        {(["destination", "cover", "stops", "review"] as Step[]).map((s, i) => {
+          const idx = ["destination","cover","stops","review"].indexOf(step);
+          return (
+            <View key={s} style={styles.stepItem}>
+              <View style={[
+                styles.stepDot,
+                step === s && styles.stepDotActive,
+                i < idx && styles.stepDotDone,
+              ]} />
+              <Text style={[styles.stepLabel, step === s && styles.stepLabelActive]}>
+                {["Destination","Cover","Stops","Review"][i]}
+              </Text>
+            </View>
+          );
+        })}
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView
+          style={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
 
           {/* ── STEP 1: Destination ── */}
           {step === "destination" && (
@@ -274,7 +412,11 @@ export default function PlanScreen() {
               />
               {searching && <ActivityIndicator color="#c9a84c" style={{ marginTop: 12 }} />}
               {results.map(r => (
-                <TouchableOpacity key={r.displayName} style={styles.resultRow} onPress={() => selectDestination(r)}>
+                <TouchableOpacity
+                  key={r.displayName}
+                  style={styles.resultRow}
+                  onPress={() => selectDestination(r)}
+                >
                   <Text style={styles.resultFlag}>{r.flag}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.resultName}>{r.name}</Text>
@@ -291,7 +433,6 @@ export default function PlanScreen() {
             <View style={styles.stepContent}>
               <Text style={styles.stepHeading}>{destination?.flag} {destination?.name}</Text>
 
-              {/* Title */}
               <Text style={styles.fieldLabel}>TRIP TITLE</Text>
               <TextInput
                 style={styles.textInput}
@@ -301,7 +442,6 @@ export default function PlanScreen() {
                 placeholderTextColor="rgba(255,255,255,0.3)"
               />
 
-              {/* Description */}
               <Text style={[styles.fieldLabel, { marginTop: 16 }]}>DESCRIPTION</Text>
               <TextInput
                 style={[styles.textInput, { height: 80, textAlignVertical: "top" }]}
@@ -312,7 +452,6 @@ export default function PlanScreen() {
                 multiline
               />
 
-              {/* Month / Year */}
               <Text style={[styles.fieldLabel, { marginTop: 16 }]}>WHEN WAS THIS TRIP?</Text>
               <View style={styles.dateRow}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
@@ -341,7 +480,6 @@ export default function PlanScreen() {
                 ))}
               </View>
 
-              {/* Cover photo */}
               <Text style={[styles.fieldLabel, { marginTop: 20 }]}>COVER PHOTO</Text>
               <TouchableOpacity style={styles.coverPicker} onPress={pickCoverPhoto}>
                 {coverUri ? (
@@ -354,7 +492,6 @@ export default function PlanScreen() {
                 )}
               </TouchableOpacity>
 
-              {/* Public toggle */}
               <View style={styles.toggleRow}>
                 <View>
                   <Text style={styles.toggleLabel}>Make this Travi public</Text>
@@ -383,7 +520,7 @@ export default function PlanScreen() {
               <Text style={styles.stepSub}>Hotels, restaurants, activities — what did you do?</Text>
 
               {/* Existing stops */}
-              {stops.map((s, i) => (
+              {stops.map(s => (
                 <View key={s.id} style={styles.stopCard}>
                   <View style={styles.stopHeader}>
                     <Text style={{ fontSize: 20 }}>{s.emoji}</Text>
@@ -400,7 +537,24 @@ export default function PlanScreen() {
                       <Ionicons key={n} name={n <= s.rating ? "star" : "star-outline"} size={14} color="#c9a84c" />
                     ))}
                   </View>
-                  {s.review ? <Text style={styles.stopReview} numberOfLines={2}>{s.review}</Text> : null}
+                  {s.review ? (
+                    <Text style={styles.stopReview} numberOfLines={2}>{s.review}</Text>
+                  ) : null}
+                  {/* Stop photo thumbnails */}
+                  {s.photos.length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
+                      <View style={{ flexDirection: "row", gap: 6 }}>
+                        {s.photos.map((uri, idx) => (
+                          <TouchableOpacity
+                            key={idx}
+                            onPress={() => { setLightboxPhotos(s.photos); setLightboxIdx(idx); }}
+                          >
+                            <Image source={{ uri }} style={styles.stopPhotoThumb} />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  )}
                 </View>
               ))}
 
@@ -416,14 +570,40 @@ export default function PlanScreen() {
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     autoFocus
                   />
+
+                  {/* Stop location with Nominatim autocomplete */}
                   <Text style={[styles.fieldLabel, { marginTop: 12 }]}>LOCATION</Text>
                   <TextInput
                     style={styles.textInput}
-                    value={newStop.location}
-                    onChangeText={v => setNewStop(p => ({ ...p, location: v }))}
+                    value={stopLocQuery}
+                    onChangeText={v => {
+                      setStopLocQuery(v);
+                      setNewStop(p => ({ ...p, location: v }));
+                    }}
                     placeholder={`${destination?.name ?? "City"}, ${destination?.country ?? "Country"}`}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                   />
+                  {stopLocSearching && (
+                    <ActivityIndicator color="#c9a84c" size="small" style={{ marginTop: 6 }} />
+                  )}
+                  {stopLocResults.length > 0 && (
+                    <View style={styles.autocompleteBox}>
+                      {stopLocResults.map((r, i) => (
+                        <TouchableOpacity
+                          key={i}
+                          style={[
+                            styles.autocompleteRow,
+                            i < stopLocResults.length - 1 && styles.autocompleteRowBorder,
+                          ]}
+                          onPress={() => selectStopLocation(r.label)}
+                        >
+                          <Ionicons name="location-outline" size={14} color="#c9a84c" style={{ marginTop: 1 }} />
+                          <Text style={styles.autocompleteText} numberOfLines={2}>{r.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
                   <Text style={[styles.fieldLabel, { marginTop: 12 }]}>RATING</Text>
                   <View style={styles.starsRow}>
                     {[1,2,3,4,5].map(n => (
@@ -432,6 +612,7 @@ export default function PlanScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
+
                   <Text style={[styles.fieldLabel, { marginTop: 12 }]}>REVIEW</Text>
                   <TextInput
                     style={[styles.textInput, { height: 80, textAlignVertical: "top" }]}
@@ -441,8 +622,44 @@ export default function PlanScreen() {
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     multiline
                   />
+
+                  {/* Stop photos */}
+                  <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                    PHOTOS ({newStopPhotos.length}/3)
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      {newStopPhotos.map((uri, idx) => (
+                        <View key={idx} style={styles.photoSlot}>
+                          <Image source={{ uri }} style={styles.photoSlotImg} />
+                          <TouchableOpacity
+                            style={styles.photoSlotRemove}
+                            onPress={() => removeStopPhoto(idx)}
+                          >
+                            <Ionicons name="close-circle" size={20} color="#ef4444" />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      {newStopPhotos.length < 3 && (
+                        <TouchableOpacity style={styles.photoSlotAdd} onPress={pickStopPhoto}>
+                          <Ionicons name="add" size={28} color="rgba(255,255,255,0.4)" />
+                          <Text style={styles.photoSlotAddText}>Add photo</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </ScrollView>
+
                   <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setAddingType(null)}>
+                    <TouchableOpacity
+                      style={styles.cancelBtn}
+                      onPress={() => {
+                        setAddingType(null);
+                        setNewStop(EMPTY_STOP);
+                        setNewStopPhotos([]);
+                        setStopLocQuery("");
+                        setStopLocResults([]);
+                      }}
+                    >
                       <Text style={styles.cancelBtnText}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.addBtn} onPress={addStop}>
@@ -474,7 +691,10 @@ export default function PlanScreen() {
               )}
 
               {stops.length > 0 && !addingType && (
-                <TouchableOpacity style={[styles.nextBtn, { marginTop: 24 }]} onPress={() => setStep("review")}>
+                <TouchableOpacity
+                  style={[styles.nextBtn, { marginTop: 24 }]}
+                  onPress={() => setStep("review")}
+                >
                   <LinearGradient colors={["#c9a84c", "#e8c96a"]} style={styles.nextBtnGrad}>
                     <Text style={styles.nextBtnText}>Review & Save →</Text>
                   </LinearGradient>
@@ -488,7 +708,6 @@ export default function PlanScreen() {
             <View style={styles.stepContent}>
               <Text style={styles.stepHeading}>Ready to save? ✈️</Text>
 
-              {/* Summary card */}
               <View style={styles.summaryCard}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryEmoji}>{destination?.flag}</Text>
@@ -500,10 +719,19 @@ export default function PlanScreen() {
                 {(month || year) && (
                   <Text style={styles.summaryDate}>{month} {year}</Text>
                 )}
-                <Text style={styles.summaryStops}>{stops.length} stops</Text>
+                <Text style={styles.summaryStops}>
+                  {stops.length} stop{stops.length !== 1 ? "s" : ""}
+                  {stops.reduce((acc, s) => acc + s.photos.length, 0) > 0
+                    ? ` · ${stops.reduce((acc, s) => acc + s.photos.length, 0)} photo${stops.reduce((acc, s) => acc + s.photos.length, 0) !== 1 ? "s" : ""}`
+                    : ""}
+                </Text>
                 <View style={[styles.publicBadge, isPublic ? styles.publicBadgeOn : styles.publicBadgeOff]}>
-                  <Ionicons name={isPublic ? "globe-outline" : "lock-closed-outline"} size={12} color={isPublic ? "#059669" : "#6b7280"} />
-                  <Text style={[styles.publicBadgeText, isPublic ? { color: "#059669" } : { color: "#6b7280" }]}>
+                  <Ionicons
+                    name={isPublic ? "globe-outline" : "lock-closed-outline"}
+                    size={12}
+                    color={isPublic ? "#059669" : "#6b7280"}
+                  />
+                  <Text style={[styles.publicBadgeText, { color: isPublic ? "#059669" : "#6b7280" }]}>
                     {isPublic ? "Public" : "Private"}
                   </Text>
                 </View>
@@ -521,20 +749,59 @@ export default function PlanScreen() {
                 </LinearGradient>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 12 }]} onPress={() => setStep("stops")}>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { marginTop: 12 }]}
+                onPress={() => setStep("stops")}
+              >
                 <Text style={styles.secondaryBtnText}>← Back to Stops</Text>
               </TouchableOpacity>
             </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Photo lightbox */}
+      <Modal
+        visible={lightboxPhotos.length > 0}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxPhotos([])}
+      >
+        <View style={styles.lightboxBg}>
+          <TouchableOpacity style={styles.lightboxClose} onPress={() => setLightboxPhotos([])}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          <FlatList
+            data={lightboxPhotos}
+            horizontal
+            pagingEnabled
+            initialScrollIndex={lightboxIdx}
+            getItemLayout={(_, index) => ({
+              length: 400, offset: 400 * index, index,
+            })}
+            keyExtractor={(_, i) => String(i)}
+            renderItem={({ item }) => (
+              <View style={styles.lightboxSlide}>
+                <Image source={{ uri: item }} style={styles.lightboxImg} resizeMode="contain" />
+              </View>
+            )}
+            showsHorizontalScrollIndicator={false}
+          />
+          <Text style={styles.lightboxCounter}>
+            {lightboxPhotos.length > 1 ? `Swipe to browse · ${lightboxPhotos.length} photos` : ""}
+          </Text>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0f1729" },
-  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
+  topBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
   backBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   topBarTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
   stepRow: { flexDirection: "row", paddingHorizontal: 20, gap: 0, marginBottom: 4 },
@@ -569,12 +836,27 @@ const styles = StyleSheet.create({
   resultFlag: { fontSize: 24 },
   resultName: { fontSize: 15, fontWeight: "700", color: "#fff" },
   resultCountry: { fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 2 },
-  fieldLabel: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.4)", letterSpacing: 1, marginBottom: 8 },
+  fieldLabel: {
+    fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.4)", letterSpacing: 1, marginBottom: 8,
+  },
   textInput: {
     backgroundColor: "rgba(255,255,255,0.07)", borderRadius: 12,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
     paddingHorizontal: 16, paddingVertical: 12, color: "#fff", fontSize: 15,
   },
+  // Autocomplete dropdown
+  autocompleteBox: {
+    backgroundColor: "#1a2540", borderRadius: 12,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+    marginTop: 4, overflow: "hidden",
+  },
+  autocompleteRow: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+    paddingHorizontal: 14, paddingVertical: 11,
+  },
+  autocompleteRowBorder: { borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)" },
+  autocompleteText: { flex: 1, fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 18 },
+  // Date pickers
   dateRow: { flexDirection: "row", marginBottom: 4 },
   datePill: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100,
@@ -583,9 +865,11 @@ const styles = StyleSheet.create({
   datePillActive: { backgroundColor: "rgba(201,168,76,0.2)", borderColor: "#c9a84c" },
   datePillText: { fontSize: 13, fontWeight: "600", color: "rgba(255,255,255,0.5)" },
   datePillTextActive: { color: "#c9a84c" },
+  // Cover
   coverPicker: { borderRadius: 16, overflow: "hidden", height: 180, marginBottom: 20 },
   coverPreview: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center", gap: 8 },
   coverPickerText: { color: "rgba(255,255,255,0.6)", fontSize: 14, fontWeight: "500" },
+  // Toggle
   toggleRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingVertical: 16, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)", marginBottom: 20,
@@ -599,9 +883,24 @@ const styles = StyleSheet.create({
   toggleOn: { backgroundColor: "#c9a84c" },
   toggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff" },
   toggleThumbOn: { alignSelf: "flex-end" },
+  // Buttons
   nextBtn: { borderRadius: 14, overflow: "hidden" },
   nextBtnGrad: { paddingVertical: 16, alignItems: "center" },
   nextBtnText: { fontSize: 16, fontWeight: "700", color: "#0f1729" },
+  secondaryBtn: {
+    paddingVertical: 14, borderRadius: 14,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", alignItems: "center",
+  },
+  secondaryBtnText: { color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: "600" },
+  cancelBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center",
+  },
+  cancelBtnText: { fontSize: 15, fontWeight: "600", color: "rgba(255,255,255,0.6)" },
+  addBtn: { flex: 2, borderRadius: 12, overflow: "hidden" },
+  addBtnGrad: { paddingVertical: 13, alignItems: "center" },
+  addBtnText: { fontSize: 15, fontWeight: "700", color: "#0f1729" },
+  // Stop cards
   stopCard: {
     backgroundColor: "rgba(255,255,255,0.07)", borderRadius: 14,
     padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
@@ -611,22 +910,30 @@ const styles = StyleSheet.create({
   stopLocation: { fontSize: 12, color: "rgba(255,255,255,0.45)", marginTop: 2 },
   starsRow: { flexDirection: "row", gap: 4, marginTop: 4 },
   stopReview: { fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 6, lineHeight: 18 },
-  addStopForm: { backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 16, padding: 16, marginTop: 4 },
+  stopPhotoThumb: { width: 72, height: 56, borderRadius: 8 },
+  addStopForm: {
+    backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 16, padding: 16, marginTop: 4,
+  },
   stopTypeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   stopTypeBtn: {
     width: "47%", paddingVertical: 16, borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", gap: 8,
-    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", gap: 8, borderWidth: 1,
   },
   stopTypeLabel: { fontSize: 13, fontWeight: "600", color: "rgba(255,255,255,0.7)" },
-  cancelBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center",
+  // Stop photos
+  photoSlot: { position: "relative", width: 90, height: 72 },
+  photoSlotImg: { width: 90, height: 72, borderRadius: 10 },
+  photoSlotRemove: {
+    position: "absolute", top: -6, right: -6,
+    backgroundColor: "#0f1729", borderRadius: 10,
   },
-  cancelBtnText: { fontSize: 15, fontWeight: "600", color: "rgba(255,255,255,0.6)" },
-  addBtn: { flex: 2, borderRadius: 12, overflow: "hidden" },
-  addBtnGrad: { paddingVertical: 13, alignItems: "center" },
-  addBtnText: { fontSize: 15, fontWeight: "700", color: "#0f1729" },
+  photoSlotAdd: {
+    width: 90, height: 72, borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.07)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    borderStyle: "dashed", alignItems: "center", justifyContent: "center", gap: 4,
+  },
+  photoSlotAddText: { fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: "500" },
+  // Summary
   summaryCard: {
     backgroundColor: "rgba(255,255,255,0.07)", borderRadius: 20,
     padding: 20, marginBottom: 24, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
@@ -644,6 +951,21 @@ const styles = StyleSheet.create({
   publicBadgeOn: { backgroundColor: "rgba(5,150,105,0.1)", borderWidth: 1, borderColor: "rgba(5,150,105,0.3)" },
   publicBadgeOff: { backgroundColor: "rgba(107,114,128,0.1)", borderWidth: 1, borderColor: "rgba(107,114,128,0.3)" },
   publicBadgeText: { fontSize: 12, fontWeight: "600" },
-  secondaryBtn: { paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", alignItems: "center" },
-  secondaryBtnText: { color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: "600" },
+  // Lightbox
+  lightboxBg: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.95)",
+    alignItems: "center", justifyContent: "center",
+  },
+  lightboxClose: {
+    position: "absolute", top: 56, right: 20, zIndex: 10,
+    backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20, padding: 8,
+  },
+  lightboxSlide: {
+    width: 400, height: "100%", alignItems: "center", justifyContent: "center",
+  },
+  lightboxImg: { width: "100%", height: 400 },
+  lightboxCounter: {
+    position: "absolute", bottom: 48,
+    fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: "500",
+  },
 });
