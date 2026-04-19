@@ -25,16 +25,25 @@ export default function MyTraviisScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
 
-    // Fetch profile
+    // Fetch profile — fall back to auth metadata if profile row is empty
     const { data: prof } = await supabase
       .from("profiles")
       .select("id, name, handle, avatar_url")
       .eq("id", user.id)
       .single();
-    if (prof) setProfile(prof);
+
+    const authName = (user.user_metadata?.name as string) || user.email?.split("@")[0] || "";
+    const authHandle = authName ? `@${authName.toLowerCase().replace(/\s+/g, "")}` : "@you";
+
+    setProfile({
+      id: user.id,
+      name: prof?.name || authName || "Traveler",
+      handle: prof?.handle || authHandle,
+      avatar_url: prof?.avatar_url ?? null,
+    });
 
     // Fetch my traviis
-    const { data: myData } = await supabase
+    const { data: myData, error: myError } = await supabase
       .from("traviis")
       .select(`
         id, title, description, emoji, country, country_flag,
@@ -44,6 +53,8 @@ export default function MyTraviisScreen() {
       `)
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
+
+    if (myError) console.error("My Travis fetch error:", myError.message);
 
     if (myData) setTraviis(myData.map(t => ({
       ...t,
@@ -57,18 +68,30 @@ export default function MyTraviisScreen() {
       .eq("accepted_by", user.id);
 
     if (shareData && shareData.length > 0) {
-      const ids = shareData.map(s => s.travi_id);
+      const ids = shareData.map((s: { travi_id: string }) => s.travi_id);
       const { data: sharedData } = await supabase
         .from("traviis")
         .select(`
           id, title, description, emoji, country, country_flag,
           cover_gradient, cover_image_url, tags, is_public,
-          start_date, end_date, created_at, user_id,
-          profiles ( name, handle, avatar_url ),
-          stops ( id, name, location, rating, type, emoji, order_index )
+          start_date, end_date, created_at, user_id
         `)
         .in("id", ids);
-      if (sharedData) setSharedTraviis(sharedData as TraviRow[]);
+
+      if (sharedData && sharedData.length > 0) {
+        // Fetch owner profiles separately
+        const ownerIds = [...new Set(sharedData.map((t: { user_id: string }) => t.user_id))];
+        const { data: ownerProfiles } = await supabase
+          .from("profiles")
+          .select("id, name, handle, avatar_url")
+          .in("id", ownerIds);
+        const profileMap = new Map((ownerProfiles ?? []).map(p => [p.id, p]));
+        setSharedTraviis(sharedData.map((t: { user_id: string }) => ({
+          ...t,
+          profiles: profileMap.get(t.user_id) ?? null,
+          stops: [],
+        })) as unknown as TraviRow[]);
+      }
     }
 
     setLoading(false);
@@ -103,30 +126,40 @@ export default function MyTraviisScreen() {
     if (!user) return;
 
     const uri = result.assets[0].uri;
-    const ext = uri.split(".").pop() ?? "jpg";
-    const fileName = `${user.id}/avatar.${ext}`;
+    const rawExt = uri.split(".").pop()?.toLowerCase() ?? "jpg";
+    const ext = rawExt === "jpg" ? "jpeg" : rawExt;
+    const fileName = `${user.id}/avatar.${rawExt}`;
 
     const response = await fetch(uri);
     const blob = await response.blob();
-    const arrayBuffer = await new Response(blob).arrayBuffer();
 
     const { error: uploadError } = await supabase.storage
       .from("travi-images")
-      .upload(fileName, arrayBuffer, { contentType: `image/${ext}`, upsert: true });
+      .upload(fileName, blob, { contentType: `image/${ext}`, upsert: true });
 
-    if (!uploadError) {
+    if (uploadError) {
+      Alert.alert("Upload failed", uploadError.message);
+    } else {
       const { data: { publicUrl } } = supabase.storage
         .from("travi-images")
         .getPublicUrl(fileName);
-      await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id);
+      await supabase.from("profiles").upsert({ id: user.id, avatar_url: publicUrl }, { onConflict: "id" });
       setProfile(prev => prev ? { ...prev, avatar_url: publicUrl } : prev);
     }
     setUploadingAvatar(false);
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.replace("/(auth)/sign-in");
+  const handleSignOut = () => {
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out", style: "destructive",
+        onPress: async () => {
+          await supabase.auth.signOut();
+          // _layout.tsx auth effect handles redirect automatically
+        },
+      },
+    ]);
   };
 
   const displayTraviis = tab === "mine" ? traviis : sharedTraviis;
@@ -160,7 +193,8 @@ export default function MyTraviisScreen() {
 
           {/* Sign out */}
           <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
-            <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.5)" />
+            <Ionicons name="log-out-outline" size={16} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
 
@@ -242,7 +276,7 @@ export default function MyTraviisScreen() {
                     onPress={() => router.push(`/travi/${item.id}`)}
                   >
                     <Ionicons name="pencil-outline" size={14} color="#0f1729" />
-                    <Text style={styles.editBtnText}>View</Text>
+                    <Text style={styles.editBtnText}>Edit</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.deleteBtn}
@@ -279,7 +313,12 @@ const styles = StyleSheet.create({
   },
   profileName: { fontSize: 17, fontWeight: "800", color: "#fff", letterSpacing: -0.3 },
   profileHandle: { fontSize: 13, color: "rgba(255,255,255,0.45)", marginTop: 2 },
-  signOutBtn: { padding: 6 },
+  signOutBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingVertical: 6, paddingHorizontal: 10,
+    borderRadius: 8, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+  },
+  signOutText: { fontSize: 12, fontWeight: "600", color: "rgba(255,255,255,0.6)" },
   stats: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.07)",

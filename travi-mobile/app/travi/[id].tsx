@@ -94,26 +94,38 @@ export default function TraviDetailScreen() {
   // Photo lightbox
   const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null);
 
+  // Save stop to collection (non-owners)
+  const [savedStopIds, setSavedStopIds] = useState<Set<string>>(new Set());
+  const [savingStopId, setSavingStopId] = useState<string | null>(null);
+
   // ── Data fetch ─────────────────────────────────────────────────
 
   const fetchTravi = async () => {
     if (!id) return;
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("traviis")
       .select(`
         id, title, description, emoji, country, country_flag,
         cover_gradient, cover_image_url, tags, is_public,
         start_date, end_date, created_at, user_id,
-        profiles ( name, handle, avatar_url ),
         stops ( id, name, location, rating, type, emoji, order_index, date, review, image_urls )
       `)
       .eq("id", id)
       .single();
 
+    if (error) console.error("Travi detail fetch error:", error.message);
+
     if (data) {
-      setTravi(data as TraviRow);
+      // Fetch profile separately to avoid FK relationship dependency
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("name, handle, avatar_url")
+        .eq("id", data.user_id)
+        .single();
+
+      setTravi({ ...data, profiles: prof ?? null } as unknown as TraviRow);
       const sorted = [...(data.stops ?? [])].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
       setStops(sorted as Stop[]);
       setIsOwner(user?.id === data.user_id);
@@ -302,9 +314,10 @@ export default function TraviDetailScreen() {
     if (!inviteEmail.trim() || !travi) return;
     setInviting(true);
     const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
     const { data: share, error } = await supabase
       .from("travi_shares")
-      .insert({ travi_id: travi.id, invited_email: inviteEmail.trim(), token })
+      .insert({ travi_id: travi.id, inviter_id: currentUser?.id, invited_email: inviteEmail.trim().toLowerCase(), token })
       .select("id, invited_email, accepted_at")
       .single();
     if (!error && share) {
@@ -324,6 +337,41 @@ export default function TraviDetailScreen() {
       message: `Check out my ${travi.country} Travi: "${travi.title}" — https://travi-snowy.vercel.app/travi/${id}`,
       url: `https://travi-snowy.vercel.app/travi/${id}`,
     });
+  };
+
+  // ── Save stop to collection ────────────────────────────────────
+
+  const saveStopToCollection = async (stop: Stop) => {
+    setSavingStopId(stop.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingStopId(null); return; }
+
+    const { error } = await supabase.from("saved_stops").insert({
+      user_id: user.id,
+      original_stop_id: stop.id,
+      original_travi_id: id,
+      name: stop.name,
+      location: stop.location,
+      rating: stop.rating,
+      review: stop.review,
+      type: stop.type,
+      emoji: stop.emoji,
+      image_url: stop.image_urls?.[0] ?? null,
+      image_urls: stop.image_urls ?? [],
+      source_user_name: travi?.profiles?.name ?? "Traveler",
+      source_travi_title: travi?.title ?? "",
+    });
+    if (!error) setSavedStopIds(prev => new Set([...prev, stop.id]));
+    setSavingStopId(null);
+  };
+
+  const unsaveStop = async (stopId: string) => {
+    setSavingStopId(stopId);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingStopId(null); return; }
+    await supabase.from("saved_stops").delete().match({ user_id: user.id, original_stop_id: stopId });
+    setSavedStopIds(prev => { const s = new Set(prev); s.delete(stopId); return s; });
+    setSavingStopId(null);
   };
 
   // ── Privacy / delete ───────────────────────────────────────────
@@ -420,8 +468,8 @@ export default function TraviDetailScreen() {
           {/* ── Tags ── */}
           {travi.tags && travi.tags.length > 0 && (
             <View style={styles.tags}>
-              {travi.tags.map(tag => (
-                <View key={tag} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>
+              {travi.tags.map((tag, i) => (
+                <View key={`${tag}-${i}`} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>
               ))}
             </View>
           )}
@@ -517,6 +565,23 @@ export default function TraviDetailScreen() {
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                )}
+                {/* Save to collection (non-owners) */}
+                {!isOwner && (
+                  <TouchableOpacity
+                    style={[styles.saveStopBtn, savedStopIds.has(stop.id) && styles.saveStopBtnSaved]}
+                    onPress={() => savedStopIds.has(stop.id) ? unsaveStop(stop.id) : saveStopToCollection(stop)}
+                    disabled={savingStopId === stop.id}
+                  >
+                    <Ionicons
+                      name={savedStopIds.has(stop.id) ? "bookmark" : "bookmark-outline"}
+                      size={13}
+                      color={savedStopIds.has(stop.id) ? "#c9a84c" : "#9ca3af"}
+                    />
+                    <Text style={[styles.saveStopBtnText, savedStopIds.has(stop.id) && { color: "#c9a84c" }]}>
+                      {savingStopId === stop.id ? "Saving…" : savedStopIds.has(stop.id) ? "Saved" : "Save to My Trip"}
+                    </Text>
+                  </TouchableOpacity>
                 )}
               </View>
             </View>
@@ -884,6 +949,13 @@ const styles = StyleSheet.create({
   stopReview: { fontSize: 13, color: "#4b5563", lineHeight: 19, marginBottom: 8 },
   photoScroll: { marginTop: 4 },
   stopPhoto: { width: 110, height: 82, borderRadius: 10, marginRight: 8 },
+  saveStopBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8,
+    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 8, backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  saveStopBtnSaved: { backgroundColor: "rgba(201,168,76,0.1)" },
+  saveStopBtnText: { fontSize: 12, color: "#9ca3af", fontWeight: "600" },
   emptyStops: { alignItems: "center", paddingVertical: 40 },
   emptyStopsEmoji: { fontSize: 40, marginBottom: 10 },
   emptyStopsText: { fontSize: 16, color: "#9ca3af", fontWeight: "600", marginBottom: 20 },

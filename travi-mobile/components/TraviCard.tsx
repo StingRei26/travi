@@ -64,8 +64,8 @@ export default function TraviCard({ travi, onPress }: Props) {
         {/* Tags */}
         {travi.tags && travi.tags.length > 0 && (
           <View style={styles.tags}>
-            {travi.tags.slice(0, 3).map((tag) => (
-              <View key={tag} style={styles.tag}>
+            {travi.tags.slice(0, 3).map((tag, i) => (
+              <View key={`${tag}-${i}`} style={styles.tag}>
                 <Text style={styles.tagText}>{tag}</Text>
               </View>
             ))}

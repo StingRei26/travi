@@ -24,13 +24,33 @@ export default function ExploreScreen() {
         id, title, description, emoji, country, country_flag,
         cover_gradient, cover_image_url, tags, is_public,
         start_date, end_date, created_at, user_id,
-        profiles ( name, handle, avatar_url ),
         stops ( id, name, location, rating, type, emoji, order_index )
       `)
       .eq("is_public", true)
       .order("created_at", { ascending: false });
 
-    if (!error && data) setTraviis(data as TraviRow[]);
+    if (error) {
+      console.error("Explore fetch error:", error.message);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      // Fetch profiles separately — avoids FK relationship dependency
+      const userIds = [...new Set(data.map(t => t.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name, handle, avatar_url")
+        .in("id", userIds);
+      const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
+      setTraviis(data.map(t => ({
+        ...t,
+        profiles: profileMap.get(t.user_id) ?? null,
+      })) as unknown as TraviRow[]);
+    } else {
+      setTraviis([]);
+    }
     setLoading(false);
     setRefreshing(false);
   };

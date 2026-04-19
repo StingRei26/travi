@@ -55,3 +55,44 @@ export interface TraviRow {
   stops?: Stop[];
   profiles?: Pick<Profile, "name" | "handle" | "avatar_url">;
 }
+
+export interface TripPlan {
+  id: string;
+  owner_id: string;
+  title: string;
+  destination: string | null;
+  country: string | null;
+  country_flag: string | null;
+  planned_date: string | null;
+  description: string | null;
+  cover_gradient: string;
+  is_active: boolean;
+  created_at: string;
+  collaborator_count?: number;
+  stop_count?: number;
+}
+
+export interface TripPlanStop {
+  id: string;
+  trip_plan_id: string;
+  added_by: string;
+  name: string;
+  location: string | null;
+  type: string;
+  notes: string | null;
+  order_index: number;
+  created_at: string;
+  added_by_name?: string;
+  planned_date?: string | null;
+}
+
+export interface TripPlanCollaborator {
+  id: string;
+  trip_plan_id: string;
+  user_id: string | null;
+  invited_email: string | null;
+  invite_token: string;
+  status: string;
+  accepted_at: string | null;
+  user_name?: string;
+}

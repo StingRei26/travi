@@ -11,6 +11,8 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import Globe, { CITIES } from "@/components/Globe";
+import type { City } from "@/components/Globe";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -112,6 +114,7 @@ export default function PlanScreen() {
   const [searching, setSearching] = useState(false);
   const [destination, setDestination] = useState<SearchResult | null>(null);
   const [userCity, setUserCity] = useState<string | null>(null);
+  const [selectedGlobeCity, setSelectedGlobeCity] = useState<City | null>(null);
 
   // Trip info
   const [title, setTitle] = useState("");
@@ -160,28 +163,41 @@ export default function PlanScreen() {
     })();
   }, []);
 
-  // Destination search (Nominatim)
+  // Destination search (Nominatim) — prioritise cities/towns
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=10&addressdetails=1&accept-language=en&featuretype=city`,
           { headers: { "User-Agent": "TraviApp/1.0" } }
         );
         const data: NominatimResult[] = await res.json();
-        setResults(data.map(r => ({
-          name: r.address?.city ?? r.address?.town ?? r.address?.county ?? r.name.split(",")[0],
-          country: r.address?.country ?? "",
-          flag: FLAG_MAP[r.address?.country ?? ""] ?? "🌍",
-          lat: parseFloat(r.lat),
-          lon: parseFloat(r.lon),
-          displayName: r.display_name,
-        })));
+
+        // Build results, dedup by city+country pair
+        const seen = new Set<string>();
+        const mapped: SearchResult[] = [];
+        for (const r of data) {
+          const cityName = r.address?.city ?? r.address?.town ?? r.address?.county ?? r.name.split(",")[0].trim();
+          const country = r.address?.country ?? "";
+          const key = `${cityName}|${country}`.toLowerCase();
+          if (seen.has(key) || !country) continue;
+          seen.add(key);
+          mapped.push({
+            name: cityName,
+            country,
+            flag: FLAG_MAP[country] ?? "🌍",
+            lat: parseFloat(r.lat),
+            lon: parseFloat(r.lon),
+            displayName: r.display_name,
+          });
+          if (mapped.length === 5) break;
+        }
+        setResults(mapped);
       } catch { setResults([]); }
       setSearching(false);
-    }, 400);
+    }, 350);
     return () => clearTimeout(timer);
   }, [query]);
 
@@ -195,21 +211,38 @@ export default function PlanScreen() {
     stopLocTimerRef.current = setTimeout(async () => {
       setStopLocSearching(true);
       try {
+        // If we have a destination, bias search within a ~200km box around it
+        const viewboxParam = destination
+          ? `&viewbox=${destination.lon - 1.8},${destination.lat - 1.8},${destination.lon + 1.8},${destination.lat + 1.8}&bounded=0`
+          : "";
         const q = destination
-          ? `${stopLocQuery}, ${destination.name}, ${destination.country}`
+          ? `${stopLocQuery}, ${destination.name}`
           : stopLocQuery;
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1&accept-language=en`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=7&addressdetails=1&accept-language=en${viewboxParam}`,
           { headers: { "User-Agent": "TraviApp/1.0" } }
         );
         const data: NominatimResult[] = await res.json();
-        setStopLocResults(data.map(r => {
-          const parts = r.display_name.split(",").slice(0, 3).map(s => s.trim());
-          return { label: parts.join(", "), displayName: r.display_name };
-        }));
+
+        const seen = new Set<string>();
+        const results: { label: string; displayName: string }[] = [];
+        for (const r of data) {
+          // Build a short human-readable label: name + city + country
+          const name = r.address?.road
+            ? `${r.name || r.address.road}`
+            : (r.name || r.display_name.split(",")[0].trim());
+          const city = r.address?.city ?? r.address?.town ?? r.address?.county ?? "";
+          const country = r.address?.country ?? "";
+          const label = [name, city, country].filter(Boolean).join(", ");
+          if (seen.has(label.toLowerCase())) continue;
+          seen.add(label.toLowerCase());
+          results.push({ label, displayName: r.display_name });
+          if (results.length === 5) break;
+        }
+        setStopLocResults(results);
       } catch { setStopLocResults([]); }
       setStopLocSearching(false);
-    }, 400);
+    }, 350);
     return () => {
       if (stopLocTimerRef.current) clearTimeout(stopLocTimerRef.current);
     };
@@ -307,7 +340,7 @@ export default function PlanScreen() {
         country_flag: destination.flag,
         cover_gradient: coverGradient,
         cover_image_url: coverImageUrl,
-        tags: [destination.country, destination.name],
+        tags: [...new Set([destination.country, destination.name])],
         is_public: isPublic,
         start_date: startDate,
       })
@@ -395,20 +428,39 @@ export default function PlanScreen() {
           {/* ── STEP 1: Destination ── */}
           {step === "destination" && (
             <View style={styles.stepContent}>
-              <Text style={styles.stepHeading}>Where did you go? ✈️</Text>
+              <Text style={[styles.stepHeading, { textAlign: "center", marginTop: 16 }]}>Where are you going? ✈️</Text>
+
+              {/* Interactive Globe */}
+              <Globe
+                selectedCity={selectedGlobeCity}
+                onCitySelect={(city: City) => {
+                  setSelectedGlobeCity(city);
+                  selectDestination({
+                    name: city.name,
+                    country: city.country,
+                    flag: city.flag,
+                    lat: city.lat,
+                    lon: city.lon,
+                    displayName: `${city.name}, ${city.country}`,
+                  });
+                }}
+              />
+
               {userCity && (
-                <View style={styles.locPill}>
+                <View style={[styles.locPill, { alignSelf: "center" }]}>
                   <View style={styles.locDot} />
-                  <Text style={styles.locText}>📍 You're near {userCity}</Text>
+                  <Text style={styles.locText}>📍 Near {userCity}</Text>
                 </View>
               )}
+
+              <Text style={styles.orDivider}>— or search —</Text>
+
               <TextInput
                 style={styles.searchBox}
                 placeholder="Search city or country…"
                 placeholderTextColor="rgba(255,255,255,0.35)"
                 value={query}
                 onChangeText={setQuery}
-                autoFocus
               />
               {searching && <ActivityIndicator color="#c9a84c" style={{ marginTop: 12 }} />}
               {results.map(r => (
@@ -447,7 +499,7 @@ export default function PlanScreen() {
                 style={[styles.textInput, { height: 80, textAlignVertical: "top" }]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="What made this trip special?"
+                placeholder="What makes this trip special?"
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 multiline
               />
@@ -517,7 +569,7 @@ export default function PlanScreen() {
           {step === "stops" && (
             <View style={styles.stepContent}>
               <Text style={styles.stepHeading}>Add your stops</Text>
-              <Text style={styles.stepSub}>Hotels, restaurants, activities — what did you do?</Text>
+              <Text style={styles.stepSub}>Hotels, restaurants, activities — what's on your list?</Text>
 
               {/* Existing stops */}
               {stops.map(s => (
@@ -618,7 +670,7 @@ export default function PlanScreen() {
                     style={[styles.textInput, { height: 80, textAlignVertical: "top" }]}
                     value={newStop.review}
                     onChangeText={v => setNewStop(p => ({ ...p, review: v }))}
-                    placeholder="What did you think?"
+                    placeholder="Notes, must-sees, things to try…"
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     multiline
                   />
@@ -823,6 +875,10 @@ const styles = StyleSheet.create({
   },
   locDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#4ade80" },
   locText: { fontSize: 13, color: "rgba(200,255,200,0.85)", fontWeight: "500" },
+  orDivider: {
+    textAlign: "center", color: "rgba(255,255,255,0.25)", fontSize: 13,
+    fontWeight: "500", marginVertical: 16,
+  },
   searchBox: {
     backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",

@@ -78,7 +78,7 @@ export default async function ExplorePage() {
       const userIds = [...new Set(data.map(row => row.user_id))];
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, name, handle, avatar")
+        .select("id, name, handle, avatar_url")
         .in("id", userIds);
 
       const profileMap = new Map(profiles?.map(p => [p.id, p]) ?? []);

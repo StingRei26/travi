@@ -39,7 +39,7 @@ export default function RootLayout() {
       router.replace("/sign-in");
     } else if (session && inAuthGroup) {
       // Redirect to tabs if authenticated
-      router.replace("/explore");
+      router.replace("/(tabs)/my-traviis");
     }
   }, [session, segments, ready]);
 
@@ -54,6 +54,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="travi/[id]" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="plan/index" options={{ animation: "slide_from_bottom", presentation: "modal" }} />
+        <Stack.Screen name="plan-trip/[id]" options={{ animation: "slide_from_right" }} />
       </Stack>
     </>
   );
