@@ -1,10 +1,8 @@
-import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from "react-native";
+import { View, Text, Image, TouchableOpacity, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import type { TraviRow } from "@/lib/supabase";
-
-const { width } = Dimensions.get("window");
 
 // Parse a CSS gradient string into an array of hex colours for LinearGradient.
 // Falls back to a safe navy-purple pair if parsing fails.

@@ -1,15 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   View, Text, Image, TouchableOpacity, StyleSheet,
-  PanResponder, Dimensions,
+  PanResponder, useWindowDimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-
-const { width: SCREEN_W } = Dimensions.get("window");
-const GLOBE_SIZE = Math.min(SCREEN_W - 48, 320);
-const CX = GLOBE_SIZE / 2;
-const CY = GLOBE_SIZE / 2;
-const R = GLOBE_SIZE * 0.44;
 
 export type City = { name: string; country: string; flag: string; lat: number; lon: number };
 
@@ -41,15 +35,16 @@ export const CITIES: City[] = [
   { name: "Mumbai",       country: "India",         flag: "🇮🇳", lat: 19.1,  lon: 72.9   },
 ];
 
+// Stars use normalized 0-1 coords; rendered as: left = nx * starContainer - 40
 const STARS = Array.from({ length: 50 }, (_, i) => ({
   key: `s${i}`,
-  x: Math.random() * (GLOBE_SIZE + 80) - 40,
-  y: Math.random() * (GLOBE_SIZE + 80) - 40,
+  nx: Math.random(),
+  ny: Math.random(),
   r: Math.random() * 1.1 + 0.3,
   o: Math.random() * 0.45 + 0.15,
 }));
 
-function project(lat: number, lon: number, lonOffset: number) {
+function project(lat: number, lon: number, lonOffset: number, R: number, CX: number, CY: number) {
   const latRad = (lat * Math.PI) / 180;
   const lonRad = ((lon + lonOffset) * Math.PI) / 180;
   const x = R * Math.cos(latRad) * Math.sin(lonRad);
@@ -59,7 +54,7 @@ function project(lat: number, lon: number, lonOffset: number) {
   return { x: CX + x, y: CY + y, z };
 }
 
-function textureOffset(lonOffset: number): number {
+function textureOffset(lonOffset: number, GLOBE_SIZE: number): number {
   const normalized = ((lonOffset % 360) + 360) % 360;
   return (normalized / 360) * GLOBE_SIZE;
 }
@@ -70,6 +65,12 @@ interface Props {
 }
 
 export default function Globe({ onCitySelect, selectedCity }: Props) {
+  const { width: SCREEN_W } = useWindowDimensions();
+  const GLOBE_SIZE = Math.min(SCREEN_W - 48, 320);
+  const CX = GLOBE_SIZE / 2;
+  const CY = GLOBE_SIZE / 2;
+  const R = GLOBE_SIZE * 0.44;
+
   const [lonOffset, setLonOffset] = useState(0);
   const lonRef = useRef(0);
   const dragging = useRef(false);
@@ -105,13 +106,13 @@ export default function Globe({ onCitySelect, selectedCity }: Props) {
     onPanResponderRelease: () => { dragging.current = false; },
   });
 
-  const imgShift = textureOffset(lonOffset);
+  const imgShift = textureOffset(lonOffset, GLOBE_SIZE);
   const img1Left = -imgShift;
   const img2Left = GLOBE_SIZE - imgShift;
 
   const visibleCities = CITIES
     .map(city => {
-      const p = project(city.lat, city.lon, lonOffset);
+      const p = project(city.lat, city.lon, lonOffset, R, CX, CY);
       return p ? { city, ...p } : null;
     })
     .filter((c): c is NonNullable<typeof c> => c !== null)
@@ -120,16 +121,19 @@ export default function Globe({ onCitySelect, selectedCity }: Props) {
   const pulseScale = 1 + 0.28 * Math.sin(tick * 0.12);
   const pulseOpacity = 0.25 + 0.25 * Math.sin(tick * 0.1);
 
+  const starContainer = GLOBE_SIZE + 80;
+
   return (
     <View style={styles.wrapper}>
       {/* Stars */}
-      <View style={styles.stars} pointerEvents="none">
+      <View style={[styles.stars, { width: starContainer, height: starContainer }]} pointerEvents="none">
         {STARS.map(s => (
           <View
             key={s.key}
             style={{
               position: "absolute",
-              left: s.x, top: s.y,
+              left: s.nx * starContainer - 40,
+              top: s.ny * starContainer - 40,
               width: s.r * 2, height: s.r * 2,
               borderRadius: s.r,
               backgroundColor: "#fff",
@@ -140,16 +144,19 @@ export default function Globe({ onCitySelect, selectedCity }: Props) {
       </View>
 
       {/* Globe — single circle, no extra rings */}
-      <View style={styles.globe} {...panResponder.panHandlers}>
+      <View
+        style={[styles.globe, { width: GLOBE_SIZE, height: GLOBE_SIZE, borderRadius: GLOBE_SIZE / 2 }]}
+        {...panResponder.panHandlers}
+      >
         {/* Earth texture — two tiles for seamless scroll */}
         <Image
           source={require("../assets/earth.jpg")}
-          style={[styles.earthImg, { left: img1Left }]}
+          style={[styles.earthImg, { left: img1Left, width: GLOBE_SIZE, height: GLOBE_SIZE }]}
           resizeMode="stretch"
         />
         <Image
           source={require("../assets/earth.jpg")}
-          style={[styles.earthImg, { left: img2Left }]}
+          style={[styles.earthImg, { left: img2Left, width: GLOBE_SIZE, height: GLOBE_SIZE }]}
           resizeMode="stretch"
         />
 
@@ -260,15 +267,10 @@ const styles = StyleSheet.create({
   },
   stars: {
     position: "absolute",
-    width: GLOBE_SIZE + 80,
-    height: GLOBE_SIZE + 80,
     top: -4,
     left: -40,
   },
   globe: {
-    width: GLOBE_SIZE,
-    height: GLOBE_SIZE,
-    borderRadius: GLOBE_SIZE / 2,
     backgroundColor: "#0a1a35",
     overflow: "hidden",
     borderWidth: 1,
@@ -282,8 +284,6 @@ const styles = StyleSheet.create({
   earthImg: {
     position: "absolute",
     top: 0,
-    width: GLOBE_SIZE,
-    height: GLOBE_SIZE,
   },
   cityDot: {
     position: "absolute",

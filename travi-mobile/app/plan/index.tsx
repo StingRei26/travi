@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   Alert, Image, ActivityIndicator, KeyboardAvoidingView, Platform,
-  FlatList, Modal,
+  FlatList, Modal, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -106,6 +106,7 @@ async function uploadImage(uri: string, path: string): Promise<string | null> {
 // ── Component ──────────────────────────────────────────────────────
 
 export default function PlanScreen() {
+  const { width: screenWidth } = useWindowDimensions();
   const [step, setStep] = useState<Step>("destination");
 
   // Destination search
@@ -204,7 +205,7 @@ export default function PlanScreen() {
   // Stop location autocomplete (Nominatim)
   useEffect(() => {
     if (stopLocTimerRef.current) clearTimeout(stopLocTimerRef.current);
-    if (!stopLocQuery.trim() || stopLocQuery === newStop.location) {
+    if (!stopLocQuery.trim()) {
       setStopLocResults([]);
       return;
     }
@@ -504,7 +505,7 @@ export default function PlanScreen() {
                 multiline
               />
 
-              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>WHEN WAS THIS TRIP?</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>TRIP DATE</Text>
               <View style={styles.dateRow}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
                   <View style={{ flexDirection: "row", gap: 8 }}>
@@ -520,7 +521,7 @@ export default function PlanScreen() {
                   </View>
                 </ScrollView>
               </View>
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
                 {YEARS.slice(0, 5).map(y => (
                   <TouchableOpacity
                     key={y}
@@ -628,11 +629,8 @@ export default function PlanScreen() {
                   <TextInput
                     style={styles.textInput}
                     value={stopLocQuery}
-                    onChangeText={v => {
-                      setStopLocQuery(v);
-                      setNewStop(p => ({ ...p, location: v }));
-                    }}
-                    placeholder={`${destination?.name ?? "City"}, ${destination?.country ?? "Country"}`}
+                    onChangeText={v => setStopLocQuery(v)}
+                    placeholder={`Search ${addingType === "hotel" ? "hotel" : addingType === "dining" ? "restaurant" : "place"} name…`}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                   />
                   {stopLocSearching && (
@@ -829,12 +827,12 @@ export default function PlanScreen() {
             pagingEnabled
             initialScrollIndex={lightboxIdx}
             getItemLayout={(_, index) => ({
-              length: 400, offset: 400 * index, index,
+              length: screenWidth, offset: screenWidth * index, index,
             })}
             keyExtractor={(_, i) => String(i)}
             renderItem={({ item }) => (
-              <View style={styles.lightboxSlide}>
-                <Image source={{ uri: item }} style={styles.lightboxImg} resizeMode="contain" />
+              <View style={[styles.lightboxSlide, { width: screenWidth }]}>
+                <Image source={{ uri: item }} style={[styles.lightboxImg, { width: screenWidth }]} resizeMode="contain" />
               </View>
             )}
             showsHorizontalScrollIndicator={false}
@@ -849,7 +847,7 @@ export default function PlanScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0f1729" },
+  safe: { flex: 1, backgroundColor: "#0f1729", overflow: "hidden" },
   topBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 16, paddingVertical: 12,
@@ -864,7 +862,7 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.3)", fontWeight: "600" },
   stepLabelActive: { color: "#c9a84c" },
   scroll: { flex: 1 },
-  stepContent: { padding: 20 },
+  stepContent: { padding: 20, maxWidth: "100%" },
   stepHeading: { fontSize: 26, fontWeight: "800", color: "#fff", letterSpacing: -0.5, marginBottom: 16 },
   stepSub: { fontSize: 14, color: "rgba(255,255,255,0.5)", marginBottom: 20, marginTop: -8 },
   locPill: {
@@ -1017,9 +1015,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20, padding: 8,
   },
   lightboxSlide: {
-    width: 400, height: "100%", alignItems: "center", justifyContent: "center",
+    height: "100%", alignItems: "center", justifyContent: "center",
   },
-  lightboxImg: { width: "100%", height: 400 },
+  lightboxImg: { height: "60%" },
   lightboxCounter: {
     position: "absolute", bottom: 48,
     fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: "500",

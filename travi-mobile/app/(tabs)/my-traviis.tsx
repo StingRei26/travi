@@ -296,7 +296,7 @@ export default function MyTraviisScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8f7f4" },
+  safe: { flex: 1, backgroundColor: "#f8f7f4", overflow: "hidden" },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 20 },
   avatarWrap: {

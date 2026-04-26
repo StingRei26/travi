@@ -164,7 +164,7 @@ export default function ExploreScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8f7f4" },
+  safe: { flex: 1, backgroundColor: "#f8f7f4", overflow: "hidden" },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
   headerTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
   headerTitle: { fontSize: 26, fontWeight: "800", color: "#fff", letterSpacing: -0.5 },

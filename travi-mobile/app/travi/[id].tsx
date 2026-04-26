@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   View, Text, Image, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, Share, Dimensions, Modal, TextInput,
-  KeyboardAvoidingView, Platform, FlatList,
+  ActivityIndicator, Alert, Share, Modal, TextInput,
+  KeyboardAvoidingView, Platform, FlatList, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,8 +11,6 @@ import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import type { TraviRow, Stop } from "@/lib/supabase";
-
-const { width, height } = Dimensions.get("window");
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -61,6 +59,7 @@ interface LocResult { name: string; displayName: string; }
 // ── Main component ─────────────────────────────────────────────────
 
 export default function TraviDetailScreen() {
+  const { width, height } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [travi, setTravi] = useState<TraviRow | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
