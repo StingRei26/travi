@@ -118,3 +118,17 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ─── Travi detail 2-col grid → 1-col on mobile ─── */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}

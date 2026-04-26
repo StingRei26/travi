@@ -418,7 +418,7 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
 
       {/* ── Body ── */}
       <div style={{ maxWidth: "1000px", margin: "0 auto", padding: "40px 24px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "32px", alignItems: "start" }} className="detail-grid">
+        <div className="detail-grid">
 
           {/* ── Stops timeline ── */}
           <div>
