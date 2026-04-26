@@ -601,7 +601,7 @@ function GlobeStep({
         color: "rgba(200,255,200,0.9)",
         fontSize: "13px",
         fontWeight: "500",
-        minWidth: "200px",
+        maxWidth: "90vw",
         justifyContent: "center",
       }}>
         <div style={{
@@ -1347,7 +1347,7 @@ function BuilderStep({
             marginBottom: "10px",
           }}
         >
-          When was this trip?
+          Trip Date
         </label>
         <div style={{ display: "flex", gap: "12px" }}>
           <select
@@ -1415,7 +1415,7 @@ function BuilderStep({
         >
           Add a Stop
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
+        <div className="stop-type-grid">
           {(Object.entries(STOP_CONFIG) as [StopType, (typeof STOP_CONFIG)[StopType]][]).map(([type, cfg]) => {
             const active = addingType === type;
             return (
@@ -1591,7 +1591,12 @@ function BuilderStep({
                 style={{ position: "absolute", left: "14px", top: "13px", pointerEvents: "none", zIndex: 1 }}
               />
               <input
-                placeholder={`Location — search an address…`}
+                placeholder={
+                  addingType === "hotel" ? "Search hotel name…" :
+                  addingType === "dining" ? "Search restaurant name…" :
+                  addingType === "activity" ? "Search attraction name…" :
+                  "Search experience location…"
+                }
                 value={newStop.location}
                 onChange={(e) => handleLocationChange(e.target.value)}
                 onFocus={(e) => (e.currentTarget.style.borderColor = `${STOP_CONFIG[addingType!].color}70`)}
