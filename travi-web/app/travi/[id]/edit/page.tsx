@@ -293,6 +293,7 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
 
   // ── Save ──
   const handleSave = async () => {
+    console.log("[edit/save] starting save, stops:", stops.map(s => ({ id: s.id, name: s.name, isNew: s.isNew })));
     if (!title.trim()) { setSaveError("Please add a title."); return; }
     setSaving(true);
     setSaveError(null);
@@ -321,7 +322,12 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
       .update({ title: title.trim(), description: description.trim() || null, cover_image_url: finalCoverUrl })
       .eq("id", id);
 
-    if (traviErr) { setSaveError("Failed to save. Please try again."); setSaving(false); return; }
+    if (traviErr) {
+      console.error("[edit/save] travi update failed", traviErr);
+      setSaveError(`Failed to save: ${traviErr.message ?? "unknown error"}`);
+      setSaving(false);
+      return;
+    }
 
     // 3. Delete removed stops
     if (deletedStopIds.length > 0) {
@@ -362,20 +368,37 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
         end_date: endDateOut,
       };
       if (s.isNew) {
-        const { error: stopErr } = await supabase.from("stops").insert({
+        const insertPayload = {
           ...payload,
           travi_id: id,
           user_id: user.id,
           type: STOP_TYPE_MAP[s.type],
           emoji: s.emoji,
-        });
-        if (stopErr) { setSaveError("Failed to save stops. Please try again."); setSaving(false); return; }
+        };
+        console.log("[edit/save] inserting new stop", insertPayload);
+        const { data: insertData, error: stopErr } = await supabase.from("stops").insert(insertPayload).select();
+        console.log("[edit/save] insert result", { insertData, stopErr });
+        if (stopErr) {
+          console.error("[edit/save] insert failed", stopErr);
+          setSaveError(`Failed to save stop: ${stopErr.message ?? "unknown error"}`);
+          setSaving(false);
+          return;
+        }
       } else {
-        const { error: stopErr } = await supabase.from("stops").update(payload).eq("id", s.id);
-        if (stopErr) { setSaveError("Failed to save stops. Please try again."); setSaving(false); return; }
+        console.log("[edit/save] updating stop", s.id, payload);
+        const { data: updateData, error: stopErr } = await supabase.from("stops").update(payload).eq("id", s.id).select();
+        console.log("[edit/save] update result", { updateData, stopErr });
+        if (stopErr) {
+          console.error("[edit/save] update failed", stopErr);
+          setSaveError(`Failed to save stop: ${stopErr.message ?? "unknown error"}`);
+          setSaving(false);
+          return;
+        }
       }
     }
 
+    console.log("[edit/save] all stops saved, navigating back");
+    router.refresh(); // Force server component to re-fetch
     router.push(`/travi/${id}`);
   };
 
