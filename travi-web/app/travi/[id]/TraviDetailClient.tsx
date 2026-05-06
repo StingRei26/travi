@@ -110,12 +110,33 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
     if (!q.trim() || q.length < 2) { setEditLocSugs([]); return; }
     editLocDebRef.current = setTimeout(async () => {
       try {
+        // Bias the search toward the Travi's country so "Brau" finds "Barú, Cartagena"
+        // rather than "Braux, Provence" when the trip is in Colombia.
+        const country = travi.country?.trim();
+        const biasedQ = country ? `${q}, ${country}` : q;
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&accept-language=en`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(biasedQ)}&format=json&limit=8&accept-language=en&addressdetails=1`,
           { headers: { "User-Agent": "TraviApp/1.0" } }
         );
-        const data: { display_name: string }[] = await res.json();
-        setEditLocSugs(data.map((r) => r.display_name.split(",").slice(0, 3).join(",").trim()));
+        const data: { display_name: string; address?: { country?: string } }[] = await res.json();
+
+        // Prefer results from the trip's country, but fall back to all results
+        // if there are no country matches. Dedup by short label.
+        const inCountry = country
+          ? data.filter((r) => r.address?.country?.toLowerCase() === country.toLowerCase())
+          : [];
+        const ranked = inCountry.length > 0 ? [...inCountry, ...data.filter((r) => !inCountry.includes(r))] : data;
+
+        const seen = new Set<string>();
+        const labels: string[] = [];
+        for (const r of ranked) {
+          const label = r.display_name.split(",").slice(0, 3).join(",").trim();
+          if (seen.has(label.toLowerCase())) continue;
+          seen.add(label.toLowerCase());
+          labels.push(label);
+          if (labels.length === 5) break;
+        }
+        setEditLocSugs(labels);
       } catch { /* ignore */ }
     }, 380);
   };
@@ -340,7 +361,7 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
   return (
     <main style={{ backgroundColor: "#f8f7f4", minHeight: "100vh" }}>
       {/* ── Hero Banner ── */}
-      <div style={heroStyle}>
+      <div className="travi-hero" style={heroStyle}>
         <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", pointerEvents: "none" }} />
         <div style={{ maxWidth: "1000px", margin: "0 auto", position: "relative", zIndex: 1 }}>
           <Link href="/explore" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "rgba(255,255,255,0.8)", fontSize: "14px", fontWeight: "500", textDecoration: "none", marginBottom: "32px" }}>
@@ -348,8 +369,8 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
             Back to Explore
           </Link>
 
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
-            <div>
+          <div className="travi-hero-row" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
+            <div style={{ minWidth: 0, flex: "1 1 auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
                 <span style={{ fontSize: "52px" }}>{travi.emoji}</span>
                 <div>
@@ -379,7 +400,7 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
             </div>
 
             {/* Action buttons */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div className="travi-hero-actions" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               <ActionBtn icon={<Heart size={16} />} label={`${travi.stats.likes} likes`} />
               <ActionBtn icon={<Bookmark size={16} />} label={`${travi.stats.saves} saves`} />
               {isOwner && (
@@ -417,12 +438,12 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
       </div>
 
       {/* ── Body ── */}
-      <div style={{ maxWidth: "1000px", margin: "0 auto", padding: "40px 24px" }}>
+      <div className="travi-body" style={{ maxWidth: "1000px", margin: "0 auto", padding: "40px 24px" }}>
         <div className="detail-grid">
 
           {/* ── Stops timeline ── */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px" }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="travi-stops-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px" }}>
               <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#0f1729", letterSpacing: "-0.5px" }}>
                 Trip Stops
               </h2>

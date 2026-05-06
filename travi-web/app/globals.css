@@ -132,3 +132,47 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Travi detail page mobile responsiveness ─── */
+.travi-hero h1 {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+@media (max-width: 640px) {
+  .travi-hero {
+    padding: 32px 16px 48px !important;
+  }
+  .travi-body {
+    padding: 28px 16px !important;
+  }
+  .travi-hero-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .travi-hero-actions {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    margin-top: 8px;
+  }
+  .travi-hero-actions > button,
+  .travi-hero-actions > a {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+  }
+  .travi-stops-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .travi-stops-header h2 {
+    font-size: 20px !important;
+  }
+  .travi-stop-card {
+    padding: 16px !important;
+  }
+  .travi-stop-card .stop-meta {
+    flex-wrap: wrap !important;
+  }
+}
