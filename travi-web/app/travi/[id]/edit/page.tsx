@@ -27,6 +27,8 @@ type EditableStop = {
   review: string;
   emoji: string;
   images: ImageSlot[];
+  startDate: string; // yyyy-mm-dd or ""
+  endDate: string;   // yyyy-mm-dd or ""
 };
 
 type EditFormData = {
@@ -35,6 +37,8 @@ type EditFormData = {
   rating: number;
   review: string;
   images: ImageSlot[];
+  startDate: string;
+  endDate: string;
 };
 
 type NewStopData = {
@@ -43,6 +47,8 @@ type NewStopData = {
   rating: number;
   review: string;
   images: ImageSlot[];
+  startDate: string;
+  endDate: string;
 };
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -116,7 +122,7 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
   // New stop
   const [addingType, setAddingType] = useState<StopType | null>(null);
   const [newStop, setNewStop] = useState<NewStopData>({
-    name: "", location: "", rating: 5, review: "", images: [],
+    name: "", location: "", rating: 5, review: "", images: [], startDate: "", endDate: "",
   });
   const [newLocSugs, setNewLocSugs] = useState<string[]>([]);
   const newStopImgRef = useRef<HTMLInputElement>(null);
@@ -168,6 +174,8 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
           rating: s.rating ?? 5,
           review: s.review ?? "",
           emoji: s.emoji ?? "📍",
+          startDate: s.start_date ?? "",
+          endDate: s.end_date ?? "",
           images: existingUrls.map((url, i) => ({
             key: `existing-${i}`,
             url,
@@ -214,7 +222,15 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
   // ── Stop actions ──
   const startEditing = (stop: EditableStop) => {
     setEditingStopId(stop.id);
-    setEditForm({ name: stop.name, location: stop.location, rating: stop.rating, review: stop.review, images: [...stop.images] });
+    setEditForm({
+      name: stop.name,
+      location: stop.location,
+      rating: stop.rating,
+      review: stop.review,
+      images: [...stop.images],
+      startDate: stop.startDate ?? "",
+      endDate: stop.endDate ?? "",
+    });
     setEditLocSugs([]);
   };
 
@@ -223,7 +239,16 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
     setStops((prev) =>
       prev.map((s) =>
         s.id === editingStopId
-          ? { ...s, name: editForm.name, location: editForm.location, rating: editForm.rating, review: editForm.review, images: editForm.images }
+          ? {
+              ...s,
+              name: editForm.name,
+              location: editForm.location,
+              rating: editForm.rating,
+              review: editForm.review,
+              images: editForm.images,
+              startDate: editForm.startDate,
+              endDate: editForm.endDate,
+            }
           : s
       )
     );
@@ -240,6 +265,11 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
   const handleAddNewStop = () => {
     if (!newStop.name.trim() || !addingType) return;
     const cfg = STOP_CONFIG[addingType];
+    // Normalize dates: swap if user entered end before start, treat lone end as start.
+    let { startDate, endDate } = newStop;
+    if (!startDate && endDate) { startDate = endDate; endDate = ""; }
+    if (startDate && endDate && endDate < startDate) [startDate, endDate] = [endDate, startDate];
+    if (startDate && endDate && startDate === endDate) endDate = "";
     setStops((prev) => [
       ...prev,
       {
@@ -252,10 +282,12 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
         review: newStop.review.trim(),
         emoji: cfg.emoji,
         images: [...newStop.images],
+        startDate,
+        endDate,
       },
     ]);
     setAddingType(null);
-    setNewStop({ name: "", location: "", rating: 5, review: "", images: [] });
+    setNewStop({ name: "", location: "", rating: 5, review: "", images: [], startDate: "", endDate: "" });
     setNewLocSugs([]);
   };
 
@@ -309,6 +341,15 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
           if (url) finalUrls.push(url);
         }
       }
+      // Final date validation right before write (mirrors the modal's normalization).
+      let startDateOut: string | null = s.startDate || null;
+      let endDateOut: string | null = s.endDate || null;
+      if (!startDateOut && endDateOut) { startDateOut = endDateOut; endDateOut = null; }
+      if (startDateOut && endDateOut && endDateOut < startDateOut) {
+        [startDateOut, endDateOut] = [endDateOut, startDateOut];
+      }
+      if (startDateOut && endDateOut && startDateOut === endDateOut) endDateOut = null;
+
       const payload = {
         name: s.name,
         location: s.location,
@@ -317,6 +358,8 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
         order_index: i,
         image_urls: finalUrls,
         image_url: finalUrls[0] ?? null,
+        start_date: startDateOut,
+        end_date: endDateOut,
       };
       if (s.isNew) {
         const { error: stopErr } = await supabase.from("stops").insert({
@@ -508,6 +551,45 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
                         onFocus={(e) => (e.currentTarget.style.borderColor = `${cfg.color}70`)}
                         onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
                       />
+                      {/* Dates */}
+                      <div>
+                        <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>
+                          Date{" "}
+                          <span style={{ color: "rgba(255,255,255,0.25)", fontWeight: "400", textTransform: "none", letterSpacing: 0 }}>
+                            (single day or range — leave end blank for one-time)
+                          </span>
+                        </p>
+                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                            <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px", marginBottom: "4px" }}>START</div>
+                            <input
+                              type="date"
+                              value={editForm.startDate}
+                              onChange={(e) => setEditForm((f) => ({ ...f!, startDate: e.target.value }))}
+                              style={{ ...fieldStyle, colorScheme: "dark" } as React.CSSProperties}
+                            />
+                          </div>
+                          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                            <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px", marginBottom: "4px" }}>END (optional)</div>
+                            <input
+                              type="date"
+                              value={editForm.endDate}
+                              min={editForm.startDate || undefined}
+                              onChange={(e) => setEditForm((f) => ({ ...f!, endDate: e.target.value }))}
+                              style={{ ...fieldStyle, colorScheme: "dark" } as React.CSSProperties}
+                            />
+                          </div>
+                        </div>
+                        {(editForm.startDate || editForm.endDate) && (
+                          <button
+                            type="button"
+                            onClick={() => setEditForm((f) => ({ ...f!, startDate: "", endDate: "" }))}
+                            style={{ marginTop: "8px", background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: "12px", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+                          >
+                            Clear dates
+                          </button>
+                        )}
+                      </div>
                       {/* Images */}
                       <div>
                         <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>
@@ -657,6 +739,45 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
                   ))}
                 </div>
               </div>
+              {/* Dates */}
+              <div>
+                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>
+                  Date{" "}
+                  <span style={{ color: "rgba(255,255,255,0.25)", fontWeight: "400", textTransform: "none", letterSpacing: 0 }}>
+                    (single day or range — leave end blank for one-time)
+                  </span>
+                </p>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                    <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px", marginBottom: "4px" }}>START</div>
+                    <input
+                      type="date"
+                      value={newStop.startDate}
+                      onChange={(e) => setNewStop((n) => ({ ...n, startDate: e.target.value }))}
+                      style={{ ...fieldStyle, colorScheme: "dark" } as React.CSSProperties}
+                    />
+                  </div>
+                  <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                    <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px", marginBottom: "4px" }}>END (optional)</div>
+                    <input
+                      type="date"
+                      value={newStop.endDate}
+                      min={newStop.startDate || undefined}
+                      onChange={(e) => setNewStop((n) => ({ ...n, endDate: e.target.value }))}
+                      style={{ ...fieldStyle, colorScheme: "dark" } as React.CSSProperties}
+                    />
+                  </div>
+                </div>
+                {(newStop.startDate || newStop.endDate) && (
+                  <button
+                    type="button"
+                    onClick={() => setNewStop((n) => ({ ...n, startDate: "", endDate: "" }))}
+                    style={{ marginTop: "8px", background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: "12px", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+                  >
+                    Clear dates
+                  </button>
+                )}
+              </div>
               <textarea placeholder="Share your experience…" value={newStop.review}
                 onChange={(e) => setNewStop((s) => ({ ...s, review: e.target.value }))} rows={3}
                 style={{ ...fieldStyle, resize: "none" } as React.CSSProperties}
@@ -701,7 +822,7 @@ export default function EditTraviPage({ params }: { params: Promise<{ id: string
               </div>
               <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
                 <button
-                  onClick={() => { setAddingType(null); setNewStop({ name: "", location: "", rating: 5, review: "", images: [] }); setNewLocSugs([]); }}
+                  onClick={() => { setAddingType(null); setNewStop({ name: "", location: "", rating: 5, review: "", images: [], startDate: "", endDate: "" }); setNewLocSugs([]); }}
                   style={{ padding: "11px 20px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.12)", backgroundColor: "transparent", color: "rgba(255,255,255,0.5)", fontWeight: "600", fontSize: "14px", cursor: "pointer", fontFamily: "inherit" }}
                 >
                   Cancel
