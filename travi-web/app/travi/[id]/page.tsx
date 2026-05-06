@@ -10,7 +10,9 @@ export interface DisplayStop {
   rating: number;
   name: string;
   location: string;
-  date: string;
+  date: string;            // legacy display string (created_at fallback)
+  startDate: string | null; // ISO yyyy-mm-dd or null
+  endDate: string | null;   // ISO yyyy-mm-dd or null
   review: string;
   imageUrls: string[];
 }
@@ -66,6 +68,7 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
           id: string; emoji: string; type: string; rating: number;
           name: string; location: string; created_at: string; review: string;
           image_url?: string | null; image_urls?: string[] | null;
+          start_date?: string | null; end_date?: string | null;
         }) => ({
           id: s.id,
           emoji: s.emoji ?? "📍",
@@ -74,6 +77,8 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
           name: s.name,
           location: s.location ?? "",
           date: s.created_at ? new Date(s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "",
+          startDate: s.start_date ?? null,
+          endDate: s.end_date ?? null,
           review: s.review ?? "",
           imageUrls: Array.isArray(s.image_urls) && s.image_urls.length > 0
             ? s.image_urls
@@ -117,7 +122,7 @@ export default async function TraviDetailPage({ params }: { params: Promise<{ id
       stats: mock.stats,
       startDate: mock.startDate,
       endDate: mock.endDate,
-      stops: mock.stops.map((s) => ({ ...s, imageUrls: [] })),
+      stops: mock.stops.map((s) => ({ ...s, imageUrls: [], startDate: null, endDate: null })),
       tags: mock.tags,
     };
   }
