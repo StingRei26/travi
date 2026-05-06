@@ -99,6 +99,8 @@ create table if not exists public.stops (
 -- Add columns if table already existed without them
 alter table public.stops add column if not exists image_url text;
 alter table public.stops add column if not exists image_urls text[] default '{}';
+alter table public.stops add column if not exists start_date date;
+alter table public.stops add column if not exists end_date   date;
 
 alter table public.stops enable row level security;
 

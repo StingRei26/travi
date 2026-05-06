@@ -24,6 +24,8 @@ type StopEditForm = {
   location: string;
   rating: number;
   review: string;
+  startDate: string;       // ISO yyyy-mm-dd, "" if unset
+  endDate: string;         // ISO yyyy-mm-dd, "" if unset
   images: ImageSlot[];
 };
 
@@ -49,6 +51,41 @@ const typeLabels: Record<string, string> = {
   attraction: "📍 Attraction",
   experience: "✨ Experience",
 };
+
+// Format a stop's date or date-range for display.
+// • single date  → "May 2, 2026"
+// • range, same year, same month → "May 2 → 5, 2026"
+// • range, same year, different month → "May 2 → Jun 1, 2026"
+// • range, different years → "Dec 30, 2025 → Jan 2, 2026"
+function formatStopDates(start: string | null, end: string | null, fallback: string): string {
+  if (!start && !end) return fallback;
+  // Parse as local date (yyyy-mm-dd) without timezone surprises
+  const parse = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, (m ?? 1) - 1, d ?? 1);
+  };
+  const s = start ? parse(start) : null;
+  const e = end ? parse(end) : null;
+  const monthShort = (d: Date) => d.toLocaleDateString("en-US", { month: "short" });
+  const dayNum = (d: Date) => d.getDate();
+  const yearNum = (d: Date) => d.getFullYear();
+  const full = (d: Date) =>
+    d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+  if (s && !e) return full(s);
+  if (!s && e) return full(e);
+  if (s && e) {
+    if (s.getTime() === e.getTime()) return full(s);
+    if (yearNum(s) === yearNum(e)) {
+      if (monthShort(s) === monthShort(e)) {
+        return `${monthShort(s)} ${dayNum(s)} → ${dayNum(e)}, ${yearNum(s)}`;
+      }
+      return `${monthShort(s)} ${dayNum(s)} → ${monthShort(e)} ${dayNum(e)}, ${yearNum(s)}`;
+    }
+    return `${full(s)} → ${full(e)}`;
+  }
+  return fallback;
+}
 
 // ─── Props ──────────────────────────────────────────────────────────
 
@@ -150,6 +187,8 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
       location: stop.location,
       rating: stop.rating,
       review: stop.review,
+      startDate: stop.startDate ?? "",
+      endDate: stop.endDate ?? "",
       images: stop.imageUrls.map((url, i) => ({ key: `existing-${i}`, url, existingUrl: url })),
     });
     setEditLocSugs([]);
@@ -188,11 +227,23 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
       }
     }
 
+    // Validate end >= start; swap silently if user inverted them
+    let startDate = editForm.startDate || null;
+    let endDate = editForm.endDate || null;
+    if (startDate && endDate && endDate < startDate) {
+      [startDate, endDate] = [endDate, startDate];
+    }
+    // If they only entered one date, treat it as a single-day event (no end_date)
+    if (startDate && !endDate) endDate = null;
+    if (!startDate && endDate) { startDate = endDate; endDate = null; }
+
     const { error } = await supabase.from("stops").update({
       name: editForm.name,
       location: editForm.location,
       rating: editForm.rating,
       review: editForm.review,
+      start_date: startDate,
+      end_date: endDate,
       image_urls: finalUrls,
       image_url: finalUrls[0] ?? null,
     }).eq("id", editingStop.id);
@@ -201,7 +252,7 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
       setStops((prev) =>
         prev.map((s) =>
           s.id === editingStop.id
-            ? { ...s, name: editForm.name, location: editForm.location, rating: editForm.rating, review: editForm.review, imageUrls: finalUrls }
+            ? { ...s, name: editForm.name, location: editForm.location, rating: editForm.rating, review: editForm.review, startDate, endDate, imageUrls: finalUrls }
             : s
         )
       );
@@ -547,17 +598,22 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
                             </div>
                           </div>
 
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
-                            <MapPin size={12} color="#9ca3af" />
-                            <span style={{ fontSize: "13px", color: "#9ca3af" }}>{stop.location}</span>
-                            {stop.date && (
-                              <>
-                                <span style={{ color: "#d1d5db", margin: "0 4px" }}>·</span>
-                                <Calendar size={12} color="#9ca3af" />
-                                <span style={{ fontSize: "13px", color: "#9ca3af" }}>{stop.date}</span>
-                              </>
-                            )}
-                          </div>
+                          {(() => {
+                            const dateLabel = formatStopDates(stop.startDate, stop.endDate, stop.date);
+                            return (
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
+                                <MapPin size={12} color="#9ca3af" />
+                                <span style={{ fontSize: "13px", color: "#9ca3af" }}>{stop.location}</span>
+                                {dateLabel && (
+                                  <>
+                                    <span style={{ color: "#d1d5db", margin: "0 4px" }}>·</span>
+                                    <Calendar size={12} color="#9ca3af" />
+                                    <span style={{ fontSize: "13px", color: "#9ca3af" }}>{dateLabel}</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {stop.review && (
                             <p style={{ fontSize: "15px", color: "#4b5563", lineHeight: "1.65", fontStyle: "italic", borderLeft: "3px solid #c9a84c", paddingLeft: "14px" }}>
@@ -742,6 +798,49 @@ export default function TraviDetailClient({ travi: initialTravi, id, isOwner, in
                   onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
                 />
+              </div>
+
+              {/* Date(s) */}
+              <div>
+                <label style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                  Date <span style={{ color: "rgba(255,255,255,0.2)", fontWeight: "400", textTransform: "none", letterSpacing: 0 }}>
+                    (single day or range — leave end blank for one-time events)
+                  </span>
+                </label>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                    <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px", fontWeight: "600", letterSpacing: "0.5px", marginBottom: "4px" }}>START</div>
+                    <input
+                      type="date"
+                      value={editForm.startDate}
+                      onChange={(e) => setEditForm((f) => ({ ...f!, startDate: e.target.value }))}
+                      style={{ ...fieldStyle, colorScheme: "dark" } as React.CSSProperties}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
+                    />
+                  </div>
+                  <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                    <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "10px", fontWeight: "600", letterSpacing: "0.5px", marginBottom: "4px" }}>END (optional)</div>
+                    <input
+                      type="date"
+                      value={editForm.endDate}
+                      min={editForm.startDate || undefined}
+                      onChange={(e) => setEditForm((f) => ({ ...f!, endDate: e.target.value }))}
+                      style={{ ...fieldStyle, colorScheme: "dark" } as React.CSSProperties}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
+                    />
+                  </div>
+                </div>
+                {(editForm.startDate || editForm.endDate) && (
+                  <button
+                    type="button"
+                    onClick={() => setEditForm((f) => ({ ...f!, startDate: "", endDate: "" }))}
+                    style={{ marginTop: "8px", padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.12)", background: "none", color: "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: "500", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Clear dates
+                  </button>
+                )}
               </div>
 
               {/* Images */}
